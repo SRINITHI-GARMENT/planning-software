@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Requirement Details - Srinithi Garment</title>
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (Excel Export) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body
+    style="background: var(--bg-primary); color: var(--text-primary); margin: 0; padding: 0; min-height: 100vh; font-family: 'Inter', sans-serif;">
+    <!-- Toast notifications container -->
+    <div id="toast-container"
+        style="position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px;">
+    </div>
+
+    <!-- Header Navigation -->
+    <header class="app-header"
+        style="position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--border-color); background: rgba(19, 24, 37, 0.95); backdrop-filter: blur(8px); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-shirt" style="font-size: 22px; color: var(--accent-blue);"></i>
+                <span
+                    style="font-weight: 800; font-size: 16px; letter-spacing: 0.5px; text-transform: uppercase;">Srinithi
+                    Garment</span>
+            </div>
+            <div style="width: 1px; height: 24px; background: var(--border-color);"></div>
+            <button id="btn-back" class="btn btn-outline btn-sm" onclick="handleBackNavigation()"
+                style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                <i class="fa-solid fa-arrow-left"></i>
+                <span>Back to Balance Required Qty</span>
+            </button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="header-user-badge" style="display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-circle" style="color: var(--accent-green); font-size: 8px;"></i>
+                <span id="display-user">System Operator</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main style="padding: 24px; max-width: 1800px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
+
+        <!-- Title & Context Card -->
+        <div class="card"
+            style="padding: 16px 20px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: var(--radius-md); background: rgba(59, 130, 246, 0.1); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(59, 130, 246, 0.2);">
+                        <i class="fa-solid fa-scissors" style="font-size: 18px; color: var(--accent-blue);"></i>
+                    </div>
+                    <div>
+                        <div
+                            style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); font-weight: 700;">
+                            Fabric Requirement Details</div>
+                        <h1 id="fabric-title-header"
+                            style="margin: 2px 0 0 0; font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                            <span id="display-fabric-name" style="color: var(--text-primary);">-</span>
+                        </h1>
+                    </div>
+                </div>
+
+                <!-- Context Information Badges -->
+                <div id="context-chips-container"
+                    style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <!-- Dynamically populated chips -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Bar Card -->
+        <div class="card"
+            style="padding: 14px 20px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                <!-- Metric Selector Dropdown -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="metric-select"
+                        style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); white-space: nowrap;">
+                        <i class="fa-solid fa-sliders" style="margin-right: 4px;"></i> Metric View:
+                    </label>
+                    <select id="metric-select" class="form-control" onchange="onMetricChange(this.value)"
+                        style="height: 38px; min-width: 190px; font-weight: 700; background: #161b28; color: var(--accent-blue); border: 1px solid var(--accent-blue); border-radius: var(--radius-sm); padding: 0 12px; cursor: pointer;">
+                        <option value="fabric_req" selected>Fabric Req</option>
+                        <option value="fabric_stock">Fabric Stock</option>
+                        <option value="fabric_wip">Fabric WIP</option>
+                        <option value="inhand">INHAND</option>
+                        <option value="bal_required_fab">Bal Required Fab</option>
+                    </select>
+                </div>
+
+                <!-- Color Search Filter -->
+                <div style="position: relative; min-width: 220px;">
+                    <i class="fa-solid fa-magnifying-glass"
+                        style="position: absolute; left: 12px; top: 12px; font-size: 12px; color: var(--text-muted);"></i>
+                    <input type="text" id="color-search" class="form-control" placeholder="Search Color..."
+                        oninput="onColorSearch(this.value)"
+                        style="height: 38px; padding-left: 34px; width: 100%; border-radius: var(--radius-sm);">
+                </div>
+            </div>
+
+            <!-- Action Buttons & Stats -->
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                <div style="font-size: 13px; color: var(--text-secondary);">
+                    <span id="matrix-record-count" style="font-weight: 600; color: var(--text-primary);">0</span> Colors
+                    found
+                </div>
+                <div style="width: 1px; height: 20px; background: var(--border-color);"></div>
+                <button id="btn-refresh" class="btn btn-outline btn-sm" onclick="fetchFabricDetailData(true)"
+                    style="display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Recalculate & Refresh</span>
+                </button>
+                <button id="btn-export" class="btn btn-primary btn-sm" onclick="exportMatrixExcel()"
+                    style="display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Export Excel</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Matrix Data Grid Card -->
+        <div class="card"
+            style="position: relative; min-height: 400px; padding: 0; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden;">
+            <!-- Loader Overlay -->
+            <div id="fabric-loader" class="table-overlay"
+                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(19, 24, 37, 0.85); z-index: 50; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px;">
+                <div class="spinner"></div>
+                <span style="font-weight: 600; color: var(--text-primary); font-size: 14px;">Loading Fabric
+                    Details...</span>
+            </div>
+
+            <!-- Error State -->
+            <div id="fabric-error-state" class="hidden"
+                style="padding: 60px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;">
+                <i class="fa-solid fa-triangle-exclamation" style="font-size: 36px; color: var(--accent-red);"></i>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">Unable to load Fabric
+                    Details</div>
+                <div id="fabric-error-msg" style="font-size: 13px; color: var(--text-muted); max-width: 500px;">An
+                    unexpected error occurred while fetching data from the server.</div>
+                <button class="btn btn-outline btn-sm" onclick="fetchFabricDetailData(false)" style="margin-top: 8px;">
+                    <i class="fa-solid fa-rotate-right"></i> Retry
+                </button>
+            </div>
+
+            <!-- Empty State -->
+            <div id="fabric-empty-state" class="hidden"
+                style="padding: 60px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+                <i class="fa-solid fa-box-open" style="font-size: 40px; color: var(--text-muted); opacity: 0.5;"></i>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">No Fabric Data Found</div>
+                <div style="font-size: 13px; color: var(--text-muted); max-width: 450px;">No planning or requirement
+                    records match the selected Fabric Name and filters.</div>
+            </div>
+
+            <!-- Matrix Table Container -->
+            <div id="fabric-matrix-wrapper" class="fabric-matrix-wrapper">
+                <table id="table-fabric-matrix" class="fabric-matrix-table">
+                    <thead id="fabric-matrix-thead">
+                        <!-- Dynamic DIA Headers -->
+                    </thead>
+                    <tbody id="fabric-matrix-tbody">
+                        <!-- Color rows -->
+                    </tbody>
+                    <tfoot id="fabric-matrix-tfoot">
+                        <!-- Dynamic Total Row -->
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="fabric-detail.js"></script>
+</body>
+
+</html>
