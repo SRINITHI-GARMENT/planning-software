@@ -1,0 +1,41 @@
+﻿# Environment Configuration & Secrets
+.env
+.env.*
+!.env.example
+
+# Python Bytecode & Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+*.class
+*.so
+.Python
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Scratch, Logs, and Local Temporary Files
+scratch/
+*.log
+*.tmp
+
+# Database Backups & Test Outputs
+*.bak
+*backup*.json
+planning_contributions_backup.json
+
+# IDE & OS Metadata
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Build Artifacts
+build/
+dist/
+*.egg-info/
