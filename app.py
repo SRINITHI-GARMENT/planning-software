@@ -9447,6 +9447,7 @@ def get_balance_qty_data():
         if tab == 'common':
             where_clauses.append("p.common_production_name IS NOT NULL AND p.common_production_name <> ''")
             where_clauses.append("p.color <> 'All Colors'")
+            where_clauses.append("p.production_type = 'Common Member'")
         else:
             where_clauses.append("p.common_production_name IS NULL OR p.common_production_name = ''")
             
@@ -9476,12 +9477,19 @@ def get_balance_qty_data():
         
         if tab == 'common':
             cur.execute(f"""
+                WITH color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                        LOWER(TRIM(display_color)) AS color_key,
+                        global_color_code
+                    FROM color_master
+                    ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                )
                 SELECT COUNT(*) FROM (
                     SELECT 1 
                     FROM balance_qty_cache p 
-                    LEFT JOIN color_master cm ON LOWER(TRIM(p.color)) = LOWER(TRIM(cm.display_color))
+                    LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
                     WHERE {where_str}
-                    GROUP BY p.common_production_name, COALESCE(cm.global_color_code, p.color), p.size
+                    GROUP BY p.common_production_name, LOWER(TRIM(COALESCE(cm.global_color_code, p.color))), p.size
                 ) as sub;
             """, tuple(params))
         else:
@@ -9490,6 +9498,21 @@ def get_balance_qty_data():
         
         if tab == 'common':
             query_str = f"""
+                WITH color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                        LOWER(TRIM(display_color)) AS color_key,
+                        global_color_code
+                    FROM color_master
+                    ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                ),
+                primary_color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                        LOWER(TRIM(global_color_code)) AS code_key,
+                        display_color AS primary_display_color
+                    FROM color_master
+                    WHERE category = 'Primary'
+                    ORDER BY LOWER(TRIM(global_color_code)), id ASC
+                )
                 SELECT 
                     MIN(p.id) as id,
                     p.from_date,
@@ -9497,7 +9520,7 @@ def get_balance_qty_data():
                     MIN(p.brand) as brand,
                     MIN(p.category) as category,
                     p.common_production_name as product,
-                    COALESCE(MAX(cm_prim.display_color), MAX(cm.display_color), MIN(p.color)) as color,
+                    COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color,
                     p.size,
                     SUM(p.calculated_qty) as calculated_qty,
                     SUM(p.finished_goods_qty) as finished_goods_qty,
@@ -9507,12 +9530,12 @@ def get_balance_qty_data():
                     'Common' as production_type,
                     p.common_production_name,
                     MIN(p.fabric_name) as fabric_name,
-                    COALESCE(cm.global_color_code, p.color) as global_color_code
+                    COALESCE(MAX(cm.global_color_code), MIN(p.color)) as global_color_code
                 FROM balance_qty_cache p
-                LEFT JOIN color_master cm ON LOWER(TRIM(p.color)) = LOWER(TRIM(cm.display_color))
-                LEFT JOIN color_master cm_prim ON cm.global_color_code = cm_prim.global_color_code AND cm_prim.category = 'Primary'
+                LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+                LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
                 WHERE {where_str}
-                GROUP BY p.from_date, p.to_date, p.common_production_name, COALESCE(cm.global_color_code, p.color), p.size
+                GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(cm.global_color_code, p.color))), p.size
                 ORDER BY p.common_production_name ASC, p.size ASC, color ASC
             """
             if not all_records:
@@ -9592,6 +9615,21 @@ def get_balance_qty_members():
     cur = conn.cursor()
     try:
         cur.execute("""
+            WITH color_map AS (
+                SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                    LOWER(TRIM(display_color)) AS color_key,
+                    global_color_code,
+                    category
+                FROM color_master
+                ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+            ),
+            prod_map AS (
+                SELECT DISTINCT ON (LOWER(TRIM(product_name)))
+                    LOWER(TRIM(product_name)) AS prod_key,
+                    color_category
+                FROM product_master
+                ORDER BY LOWER(TRIM(product_name)), id ASC
+            )
             SELECT p.id, p.from_date, p.to_date, p.brand, p.category, p.product, p.color, p.size,
                    p.calculated_qty, p.finished_goods_qty, p.production_wip_qty, p.pending_production_qty, p.bal_required_qty,
                    p.production_type, p.common_production_name,
@@ -9599,8 +9637,8 @@ def get_balance_qty_members():
                    COALESCE(pm.color_category, cm.category, 'Primary') as color_category,
                    p.fabric_name
             FROM balance_qty_cache p
-            LEFT JOIN color_master cm ON LOWER(TRIM(p.color)) = LOWER(TRIM(cm.display_color))
-            LEFT JOIN product_master pm ON LOWER(TRIM(p.product)) = LOWER(TRIM(pm.product_name))
+            LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+            LEFT JOIN prod_map pm ON LOWER(TRIM(p.product)) = pm.prod_key
             WHERE p.plan_name = %s AND p.financial_year = %s AND p.version = %s
               AND p.from_date = %s AND p.to_date = %s AND p.common_production_name = %s AND p.size = %s
               AND p.color <> 'All Colors' AND p.production_type = 'Common Member'
@@ -10031,6 +10069,7 @@ def export_balance_qty():
         if tab == 'common':
             where_clauses.append("p.common_production_name IS NOT NULL AND p.common_production_name <> ''")
             where_clauses.append("p.color <> 'All Colors'")
+            where_clauses.append("p.production_type = 'Common Member'")
         else:
             where_clauses.append("p.common_production_name IS NULL OR p.common_production_name = ''")
             
