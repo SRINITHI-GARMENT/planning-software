@@ -9580,15 +9580,9 @@ async function savePlanningContributionData() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
-        let res = null;
-        try {
-            res = await response.json();
-        } catch (jsonErr) {
-            res = { success: false, message: response.statusText || 'Server error occurred' };
-        }
+        const res = await response.json();
 
-        if (response.ok && res && res.success) {
+        if (response.ok && res.success) {
             if (res.log_info) {
                 console.log("---- Debug Contribution Popup Save ----");
                 console.log("Product ID:", res.log_info.product_id);
@@ -9661,16 +9655,15 @@ async function savePlanningContributionData() {
                 alert(res.message || "Contributions saved successfully.");
             }
         } else {
-            const errorMsg = (res && (res.message || res.error)) || `Save failed with status ${response.status} (${response.statusText})`;
-            if (res && res.details && res.details.length > 0) {
-                alert(errorMsg + "\n\nValidation failures:\n" + res.details.join('\n'));
+            if (res.details && res.details.length > 0) {
+                alert(res.message + "\n\nValidation failures:\n" + res.details.join('\n'));
             } else {
-                alert(errorMsg);
+                alert(res.message || "Failed to save contributions.");
             }
         }
     } catch (err) {
         console.error("Error saving contributions:", err);
-        alert("Network or save error: " + (err.message || err));
+        alert("Network error.");
     } finally {
         if (loader) loader.classList.add('hidden');
     }

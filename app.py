@@ -1,4 +1,3 @@
-import threading
 import sys
 
 class SafeStream:
@@ -73,109 +72,46 @@ app.config.update(
 )
 
 # Database URL Configuration
-RAW_DB_URL = os.environ.get('DATABASE_URL', '')
-if RAW_DB_URL:
-    if RAW_DB_URL.startswith('postgres://'):
-        RAW_DB_URL = RAW_DB_URL.replace('postgres://', 'postgresql://', 1)
-    DB_URL = RAW_DB_URL
-else:
-    DB_URL = ''
+DB_URL = os.environ.get('DATABASE_URL')
+if not DB_URL:
+    logger.error("DATABASE_URL is not set in environment!")
+    raise RuntimeError("DATABASE_URL environment variable is required.")
 
+# Connection pool setup
 db_pool = None
-_db_pool_lock = threading.Lock()
-_db_setup_lock = threading.Lock()
-_db_setup_done = False
 
 def init_db_pool():
     global db_pool
-    with _db_pool_lock:
-        if db_pool is not None:
-            return
-        if not DB_URL:
-            logger.warning("DATABASE_URL is not set. Database pool initialization skipped.")
-            return
-        try:
-            db_pool = psycopg2.pool.ThreadedConnectionPool(1, 20, DB_URL)
-            logger.info("Database connection pool initialized successfully.")
-        except Exception as e:
-            logger.error(f"Error initializing database connection pool: {e}")
-            db_pool = None
+    try:
+        db_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DB_URL)
+        logger.info("Database connection pool initialized successfully.")
+    except Exception as e:
+        logger.error(f"Error initializing database connection pool: {e}")
 
 def get_db_connection():
     global db_pool
     if db_pool is None:
         init_db_pool()
-    conn = None
-    if db_pool is not None:
+    try:
+        conn = db_pool.getconn()
+        if conn.closed == 0:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+            return conn
+    except Exception as e:
+        logger.warning(f"Retrieved database connection was invalid or closed: {e}")
         try:
-            conn = db_pool.getconn()
-            if conn and not conn.closed:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT 1;")
-                return conn
-            elif conn:
-                try:
-                    db_pool.putconn(conn, close=True)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f"Retrieved database connection was invalid or closed: {e}")
-            if conn is not None and db_pool is not None:
-                try:
-                    db_pool.putconn(conn, close=True)
-                except Exception:
-                    pass
+            db_pool.putconn(conn, close=True)
+        except Exception:
+            pass
     
     logger.info("Re-initializing database connection pool...")
     init_db_pool()
-    if db_pool is not None:
-        try:
-            return db_pool.getconn()
-        except Exception as e:
-            logger.error(f"Failed to get connection from pool: {e}")
-    return psycopg2.connect(DB_URL)
+    return db_pool.getconn()
 
 def release_db_connection(conn):
-    global db_pool
-    if conn is not None:
-        try:
-            if not conn.closed:
-                conn.rollback()  # Keep connection in clean transaction state
-                if db_pool is not None:
-                    db_pool.putconn(conn)
-                else:
-                    conn.close()
-            elif db_pool is not None:
-                try:
-                    db_pool.putconn(conn, close=True)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f"Error releasing connection to pool: {e}")
-            if db_pool is not None:
-                try:
-                    db_pool.putconn(conn, close=True)
-                except Exception:
-                    pass
-
-def ensure_database_setup():
-    global _db_setup_done
-    if _db_setup_done:
-        return
-    with _db_setup_lock:
-        if _db_setup_done:
-            return
-        try:
-            setup_database()
-            _db_setup_done = True
-            logger.info("Automatic database setup/migration completed successfully.")
-        except Exception as e:
-            logger.error(f"Error during automatic database setup: {e}", exc_info=True)
-
-@app.before_request
-def auto_init_database():
-    if not _db_setup_done:
-        ensure_database_setup()
+    if db_pool and conn:
+        db_pool.putconn(conn)
 
 # Setup Database Tables (Users and Planning tables)
 def setup_database():
@@ -597,43 +533,6 @@ def setup_database():
         cur.execute("DROP INDEX IF EXISTS uq_planning_contrib_size_new CASCADE;")
         cur.execute("DROP INDEX IF EXISTS uq_planning_contrib_size_overall CASCADE;")
         cur.execute("DROP INDEX IF EXISTS uq_planning_contrib_size_colorwise CASCADE;")
-
-                # Safe deduplication of duplicate planning_contributions prior to index creation
-        try:
-            cur.execute("""
-                DELETE FROM planning_contributions a USING planning_contributions b
-                WHERE a.id < b.id
-                  AND a.contribution_type = b.contribution_type
-                  AND a.product_id = b.product_id
-                  AND (a.brand_id IS NOT DISTINCT FROM b.brand_id)
-                  AND a.version = b.version
-                  AND a.contribution_type = 'Product';
-            """)
-            cur.execute("""
-                DELETE FROM planning_contributions a USING planning_contributions b
-                WHERE a.id < b.id
-                  AND a.contribution_type = b.contribution_type
-                  AND a.product_id = b.product_id
-                  AND (a.color_code IS NOT DISTINCT FROM b.color_code)
-                  AND (a.brand_id IS NOT DISTINCT FROM b.brand_id)
-                  AND a.version = b.version
-                  AND a.contribution_type = 'Color';
-            """)
-            cur.execute("""
-                DELETE FROM planning_contributions a USING planning_contributions b
-                WHERE a.id < b.id
-                  AND a.contribution_type = b.contribution_type
-                  AND a.product_id = b.product_id
-                  AND (a.size_id IS NOT DISTINCT FROM b.size_id)
-                  AND (a.color_code IS NOT DISTINCT FROM b.color_code)
-                  AND (a.brand_id IS NOT DISTINCT FROM b.brand_id)
-                  AND a.version = b.version
-                  AND a.contribution_type = 'Size';
-            """)
-            conn.commit()
-        except Exception as e:
-            logger.warning(f"Deduplication notice before index creation: {e}")
-            conn.rollback()
 
         cur.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS uq_planning_contrib_product_logical 
@@ -6484,16 +6383,49 @@ def save_planning_contribution():
     conn = get_db_connection()
     cur = conn.cursor()
     saved_records = []
+    failed_validations = []
+    seen_keys = set()
     
     current_time = datetime.now()
     username = session.get('username', 'Admin')
     
     try:
-        # Expand rows for Size method 2 if necessary
+        # Cleanup obsolete contribution records for this product
+        if rows:
+            p_id = int(rows[0].get('product_id'))
+            
+            if c_type == 'Color':
+                cur.execute("""
+                    DELETE FROM planning_contributions
+                    WHERE product_id = %s AND contribution_type = 'Color' AND version = %s
+                      AND color_code NOT IN (
+                          SELECT global_color_code FROM product_color_mapping WHERE product_id = %s
+                      );
+                """, (p_id, version, p_id))
+            elif c_type == 'Size':
+                cur.execute("""
+                    DELETE FROM planning_contributions
+                    WHERE product_id = %s AND contribution_type = 'Size' AND version = %s
+                      AND size_id NOT IN (
+                          SELECT size_id FROM product_dia_mapping WHERE product_id = %s AND size_id IS NOT NULL
+                      );
+                """, (p_id, version, p_id))
+            elif c_type == 'Product':
+                cur.execute("""
+                    DELETE FROM planning_contributions
+                    WHERE contribution_type = 'Product' AND version = %s
+                      AND product_id NOT IN (
+                          SELECT id FROM product_master WHERE status = 'Active'
+                      );
+                """, (version,))
+
+        # We only save/update the exact rows present in the payload (no sibling expansion or total validations)
         final_save_rows = []
         if c_type == 'Size' and size_method == 2:
             for r in rows:
+                # Keep the overall record
                 final_save_rows.append(r)
+                # Copy to selected colors
                 for col_code in selected_colors:
                     r_copy = r.copy()
                     r_copy['color_code'] = col_code
@@ -6501,24 +6433,14 @@ def save_planning_contribution():
         else:
             final_save_rows = rows
 
-        # Track affected products and (product_id, color_code) pairs
-        affected_products = set()
-        affected_color_pairs = set()
-        affected_size_pairs = set()
-
-        # Save merged records authoritatively
-        for r in final_save_rows:
+        # Save merged records
+        for idx, r in enumerate(final_save_rows):
             p_id = int(r.get('product_id'))
             c_code = r.get('color_code')
             sz_id = r.get('size_id')
             brand_id = r.get('brand_id')
             manual_pct = float(r.get('manual_pct', 0.0))
             
-            affected_products.add(p_id)
-            if c_code:
-                affected_color_pairs.add((p_id, c_code))
-            affected_size_pairs.add((p_id, c_code))
-
             # Resolve brand_id if not present
             if not brand_id:
                 cur.execute("SELECT brand_id FROM product_master WHERE id = %s;", (p_id,))
@@ -6527,81 +6449,110 @@ def save_planning_contribution():
             else:
                 brand_id = int(brand_id)
 
-            # Query existing logical records ordered by latest updated
-            matching_ids = []
-            existing_fixed_pct = None
+            # Query existing values in the database using logical keys, taking the latest (id DESC) in case of logical duplicates
+            existing_id = None
+            existing_fixed_percentage = None
+            existing_last_updated = None
+            existing_updated_by = None
             
             if c_type == 'Product':
                 cur.execute("""
-                    SELECT id, fixed_percentage 
+                    SELECT id, fixed_percentage, last_updated, updated_by 
                     FROM planning_contributions
                     WHERE product_id = %s AND contribution_type = 'Product' AND version = %s
-                    ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC;
+                    ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC
+                    LIMIT 1;
                 """, (p_id, version))
-                matching_rows = cur.fetchall()
-                if matching_rows:
-                    matching_ids = [row[0] for row in matching_rows]
-                    existing_fixed_pct = matching_rows[0][1]
-
             elif c_type == 'Color':
                 cur.execute("""
-                    SELECT id, fixed_percentage 
+                    SELECT id, fixed_percentage, last_updated, updated_by 
                     FROM planning_contributions
                     WHERE product_id = %s AND color_code = %s AND contribution_type = 'Color' AND version = %s
-                    ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC;
+                    ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC
+                    LIMIT 1;
                 """, (p_id, c_code, version))
-                matching_rows = cur.fetchall()
-                if matching_rows:
-                    matching_ids = [row[0] for row in matching_rows]
-                    existing_fixed_pct = matching_rows[0][1]
-
             elif c_type == 'Size':
                 if c_code:
                     cur.execute("""
-                        SELECT id, fixed_percentage 
+                        SELECT id, fixed_percentage, last_updated, updated_by 
                         FROM planning_contributions
-                        WHERE product_id = %s AND color_code = %s AND size_id = %s AND contribution_type = 'Size' AND version = %s
-                        ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC;
-                    """, (p_id, c_code, sz_id, version))
+                        WHERE product_id = %s AND size_id = %s AND color_code = %s AND contribution_type = 'Size' AND version = %s
+                        ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC
+                        LIMIT 1;
+                    """, (p_id, sz_id, c_code, version))
                 else:
                     cur.execute("""
-                        SELECT id, fixed_percentage 
+                        SELECT id, fixed_percentage, last_updated, updated_by 
                         FROM planning_contributions
-                        WHERE product_id = %s AND color_code IS NULL AND size_id = %s AND contribution_type = 'Size' AND version = %s
-                        ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC;
+                        WHERE product_id = %s AND size_id = %s AND color_code IS NULL AND contribution_type = 'Size' AND version = %s
+                        ORDER BY COALESCE(last_updated, updated_at, created_at) DESC, id DESC
+                        LIMIT 1;
                     """, (p_id, sz_id, version))
-                matching_rows = cur.fetchall()
-                if matching_rows:
-                    matching_ids = [row[0] for row in matching_rows]
-                    existing_fixed_pct = matching_rows[0][1]
+            
+            row_exist = cur.fetchone()
+            if row_exist:
+                existing_id, existing_fixed_percentage, existing_last_updated, existing_updated_by = row_exist
 
-            new_last_upd = current_time
-            new_upd_by = username
-            new_fixed_pct = existing_fixed_pct if existing_fixed_pct is not None else manual_pct
+            # Detect manual edit from frontend flag
+            is_manually_edited = r.get('is_manually_edited', False)
+            
+            # If manually edited OR no previous record exists in database: update audit fields.
+            # Otherwise, preserve the existing database values.
+            if is_manually_edited or existing_fixed_percentage is None:
+                new_fixed_pct = manual_pct
+                new_last_upd = current_time
+                new_upd_by = username
+            else:
+                new_fixed_pct = float(existing_fixed_percentage) if existing_fixed_percentage is not None else None
+                new_last_upd = existing_last_updated
+                new_upd_by = existing_updated_by
 
-            if matching_ids:
-                authoritative_id = matching_ids[0]
+            if existing_id is not None:
+                # Update the existing record in place
                 cur.execute("""
                     UPDATE planning_contributions
                     SET manual_pct = %s,
-                        fixed_percentage = %s,
                         last_updated = %s,
                         updated_by = %s,
-                        status = 'Draft'
+                        fixed_percentage = %s,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s;
-                """, (manual_pct, new_fixed_pct, new_last_upd, new_upd_by, authoritative_id))
-
-                if len(matching_ids) > 1:
-                    duplicate_ids = matching_ids[1:]
-                    cur.execute("DELETE FROM planning_contributions WHERE id = ANY(%s);", (duplicate_ids,))
+                """, (manual_pct, new_last_upd, new_upd_by, new_fixed_pct, existing_id))
             else:
-                cur.execute("""
-                    INSERT INTO planning_contributions (
-                        contribution_type, product_id, color_code, size_id, brand_id,
-                        manual_pct, version, status, created_by,
-                        last_updated, updated_by, fixed_percentage
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'Draft', %s, %s, %s, %s);
-                """, (c_type, p_id, c_code, sz_id, brand_id, manual_pct, version, username, new_last_upd, new_upd_by, new_fixed_pct))
+                # Insert the new record
+                if c_type == 'Product':
+                    cur.execute("""
+                        INSERT INTO planning_contributions (
+                            contribution_type, product_id, color_code, size_id, brand_id, 
+                            manual_pct, version, status, created_by,
+                            last_updated, updated_by, fixed_percentage
+                        ) VALUES (%s, %s, NULL, NULL, %s, %s, %s, 'Draft', %s, %s, %s, %s);
+                    """, (c_type, p_id, brand_id, manual_pct, version, username, new_last_upd, new_upd_by, new_fixed_pct))
+                elif c_type == 'Color':
+                    cur.execute("""
+                        INSERT INTO planning_contributions (
+                            contribution_type, product_id, color_code, size_id, brand_id, 
+                            manual_pct, version, status, created_by,
+                            last_updated, updated_by, fixed_percentage
+                        ) VALUES (%s, %s, %s, NULL, %s, %s, %s, 'Draft', %s, %s, %s, %s);
+                    """, (c_type, p_id, c_code, brand_id, manual_pct, version, username, new_last_upd, new_upd_by, new_fixed_pct))
+                elif c_type == 'Size':
+                    if c_code:
+                        cur.execute("""
+                            INSERT INTO planning_contributions (
+                                contribution_type, product_id, color_code, size_id, brand_id, 
+                                manual_pct, version, status, created_by,
+                                last_updated, updated_by, fixed_percentage
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'Draft', %s, %s, %s, %s);
+                        """, (c_type, p_id, c_code, sz_id, brand_id, manual_pct, version, username, new_last_upd, new_upd_by, new_fixed_pct))
+                    else:
+                        cur.execute("""
+                            INSERT INTO planning_contributions (
+                                contribution_type, product_id, color_code, size_id, brand_id, 
+                                manual_pct, version, status, created_by,
+                                last_updated, updated_by, fixed_percentage
+                            ) VALUES (%s, %s, NULL, %s, %s, %s, %s, 'Draft', %s, %s, %s, %s);
+                        """, (c_type, p_id, sz_id, brand_id, manual_pct, version, username, new_last_upd, new_upd_by, new_fixed_pct))
 
             last_updated_str = new_last_upd.strftime('%d-%b-%Y %I:%M:%S %p') if new_last_upd else None
             saved_records.append({
@@ -6614,115 +6565,145 @@ def save_planning_contribution():
                 'fixed_percentage': new_fixed_pct
             })
 
-        overall_status_text = 'Completed'
-        overall_status_db = 'Completed'
+        # Determine total sum in database (before committing current transaction)
         db_total_pct = 0.0
-
-        if c_type == 'Product':
-            cur.execute("""
-                SELECT SUM(manual_pct)
-                FROM planning_contributions
-                WHERE contribution_type = 'Product' AND version = %s
-                  AND product_id IN (SELECT id FROM product_master WHERE status = 'Active');
-            """, (version,))
-            db_total_pct = float(cur.fetchone()[0] or 0.0)
+        if rows:
+            p_id = int(rows[0].get('product_id'))
+            c_code = rows[0].get('color_code')
             
-            if abs(db_total_pct - 100.0) < 0.01:
-                overall_status_text = 'Completed'
-                overall_status_db = 'Completed'
-            elif db_total_pct == 0.0:
-                overall_status_text = 'Missing'
-                overall_status_db = 'Missing'
-            else:
-                overall_status_text = 'Partial Contribution'
-                overall_status_db = 'Partial'
-
-            cur.execute("""
-                UPDATE planning_contributions
-                SET status = %s
-                WHERE contribution_type = 'Product' AND version = %s;
-            """, (overall_status_db, version))
-
-        elif c_type == 'Color':
-            for p_id in affected_products:
-                cur.execute("""
-                    SELECT SUM(manual_pct)
-                    FROM planning_contributions
-                    WHERE product_id = %s AND contribution_type = 'Color' AND version = %s
-                      AND color_code IN (SELECT global_color_code FROM product_color_mapping WHERE product_id = %s);
-                """, (p_id, version, p_id))
-                prod_total = float(cur.fetchone()[0] or 0.0)
-                if abs(prod_total - 100.0) < 0.01:
-                    st_db = 'Completed'
-                elif prod_total == 0.0:
-                    st_db = 'Missing'
-                else:
-                    st_db = 'Partial'
-                cur.execute("""
-                    UPDATE planning_contributions
-                    SET status = %s
-                    WHERE contribution_type = 'Color' AND product_id = %s AND version = %s;
-                """, (st_db, p_id, version))
-                db_total_pct = prod_total
-                overall_status_text = 'Completed' if st_db == 'Completed' else ('Missing' if st_db == 'Missing' else 'Partial Contribution')
-
-        elif c_type == 'Size':
-            for p_id, c_code in affected_size_pairs:
+            if c_type == 'Size':
                 if c_code:
                     cur.execute("""
-                        SELECT SUM(manual_pct)
-                        FROM planning_contributions
+                        SELECT SUM(manual_pct) 
+                        FROM planning_contributions 
                         WHERE product_id = %s AND color_code = %s AND contribution_type = 'Size' AND version = %s
                           AND size_id IN (SELECT size_id FROM product_dia_mapping WHERE product_id = %s AND size_id IS NOT NULL);
                     """, (p_id, c_code, version, p_id))
-                    pair_total = float(cur.fetchone()[0] or 0.0)
-                    st_db = 'Completed' if abs(pair_total - 100.0) < 0.01 else ('Missing' if pair_total == 0.0 else 'Partial')
-                    cur.execute("""
-                        UPDATE planning_contributions
-                        SET status = %s
-                        WHERE contribution_type = 'Size' AND product_id = %s AND color_code = %s AND version = %s;
-                    """, (st_db, p_id, c_code, version))
                 else:
                     cur.execute("""
-                        SELECT SUM(manual_pct)
-                        FROM planning_contributions
+                        SELECT SUM(manual_pct) 
+                        FROM planning_contributions 
                         WHERE product_id = %s AND color_code IS NULL AND contribution_type = 'Size' AND version = %s
                           AND size_id IN (SELECT size_id FROM product_dia_mapping WHERE product_id = %s AND size_id IS NOT NULL);
                     """, (p_id, version, p_id))
-                    pair_total = float(cur.fetchone()[0] or 0.0)
-                    st_db = 'Completed' if abs(pair_total - 100.0) < 0.01 else ('Missing' if pair_total == 0.0 else 'Partial')
+                db_total_pct = float(cur.fetchone()[0] or 0.0)
+            elif c_type == 'Color':
+                cur.execute("""
+                    SELECT SUM(manual_pct) 
+                    FROM planning_contributions 
+                    WHERE product_id = %s AND contribution_type = 'Color' AND version = %s
+                      AND color_code IN (SELECT global_color_code FROM product_color_mapping WHERE product_id = %s);
+                """, (p_id, version, p_id))
+                db_total_pct = float(cur.fetchone()[0] or 0.0)
+            elif c_type == 'Product':
+                cur.execute("""
+                    SELECT SUM(manual_pct) 
+                    FROM planning_contributions 
+                    WHERE contribution_type = 'Product' AND version = %s
+                      AND product_id IN (SELECT id FROM product_master WHERE status = 'Active');
+                """, (version,))
+                db_total_pct = float(cur.fetchone()[0] or 0.0)
+
+            status_text = 'Completed'
+            status_db = 'Completed'
+            remaining_pct = 0.0
+            if abs(db_total_pct - 100.0) < 0.01:
+                status_text = 'Completed'
+                status_db = 'Completed'
+            elif db_total_pct == 0.0:
+                status_text = 'Missing'
+                status_db = 'Missing'
+            else:
+                status_text = 'Partial Contribution'
+                status_db = 'Partial'
+                remaining_pct = 100.0 - db_total_pct
+
+            # Update status column in database for all sibling rows
+            if c_type == 'Product':
+                cur.execute("""
+                    UPDATE planning_contributions 
+                    SET status = %s 
+                    WHERE contribution_type = 'Product' AND version = %s;
+                """, (status_db, version))
+            elif c_type == 'Color':
+                cur.execute("""
+                    UPDATE planning_contributions 
+                    SET status = %s 
+                    WHERE contribution_type = 'Color' AND product_id = %s AND version = %s;
+                """, (status_db, p_id, version))
+            elif c_type == 'Size':
+                if c_code:
                     cur.execute("""
-                        UPDATE planning_contributions
-                        SET status = %s
+                        UPDATE planning_contributions 
+                        SET status = %s 
+                        WHERE contribution_type = 'Size' AND product_id = %s AND color_code = %s AND version = %s;
+                    """, (status_db, p_id, c_code, version))
+                else:
+                    cur.execute("""
+                        UPDATE planning_contributions 
+                        SET status = %s 
                         WHERE contribution_type = 'Size' AND product_id = %s AND color_code IS NULL AND version = %s;
-                    """, (st_db, p_id, version))
-                db_total_pct = pair_total
-                overall_status_text = 'Completed' if st_db == 'Completed' else ('Missing' if st_db == 'Missing' else 'Partial Contribution')
+                    """, (status_db, p_id, version))
 
         conn.commit()
+        
+        # Assemble summary metrics after successful commit
+        log_info = {}
+        msg = "Contributions saved successfully."
+        if rows:
+            p_name = ''
+            cur2 = conn.cursor()
+            cur2.execute("SELECT product_name FROM product_master WHERE id = %s;", (p_id,))
+            p_name_row = cur2.fetchone()
+            p_name = p_name_row[0] if p_name_row else ''
+            
+            col_id = None
+            col_name = ''
+            if c_code:
+                cur2.execute("SELECT id, display_color FROM color_master WHERE global_color_code = %s LIMIT 1;", (c_code,))
+                col_row = cur2.fetchone()
+                if col_row:
+                    col_id, col_name = col_row
+            cur2.close()
 
-        msg = f"Contributions saved successfully.\nStatus = {overall_status_text}."
-        if overall_status_text == 'Partial Contribution':
-            msg += f" (Remaining: {round(100.0 - db_total_pct, 2)}%)"
+            log_info = {
+                'product_id': p_id,
+                'product_name': p_name,
+                'color_id': col_id,
+                'color_name': col_name,
+                'version': version,
+                'contribution_type': c_type,
+                'rows_submitted': len(rows),
+                'rows_saved': len(rows),
+                'rows_updated': len(rows),
+                'database_total_pct': db_total_pct,
+                'status': status_text
+            }
+            
+            if status_db == 'Partial':
+                msg = f"⚠ Contribution Total = {db_total_pct:.2f}%\nSaved successfully.\nStatus = Partial Contribution\nRemaining Contribution = {remaining_pct:.2f}%"
+            else:
+                msg = f"Contributions saved successfully.\nStatus = {status_text}."
 
-        return jsonify({
+        cur.close()
+        
+        resp_data = {
             'success': True,
             'message': msg,
-            'saved_records': saved_records,
-            'saved_count': len(saved_records),
+            'success_count': len(saved_records),
             'failed_count': 0,
             'details': [],
-            'status': overall_status_text,
-            'database_total_pct': db_total_pct
-        })
+            'saved_records': saved_records,
+            'log_info': log_info
+        }
+        return jsonify(resp_data)
+
     except Exception as e:
         if conn:
             conn.rollback()
-        logger.exception(f"Error in save_planning_contribution: {e}")
-        return jsonify({'success': False, 'message': f'Database error saving contributions: {str(e)}'}), 500
+        logger.error(f"Error saving planning contributions: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': 'An error occurred while saving contributions. Please try again.'}), 500
     finally:
-        if cur:
-            cur.close()
         release_db_connection(conn)
 
 
