@@ -6493,10 +6493,19 @@ def save_planning_contribution():
             if row_exist:
                 existing_id, existing_fixed_percentage, existing_last_updated, existing_updated_by = row_exist
 
-            # Every row submitted to save is authoritatively saved with updated audit fields
-            new_fixed_pct = manual_pct
-            new_last_upd = current_time
-            new_upd_by = username
+            # Detect manual edit from frontend flag
+            is_manually_edited = r.get('is_manually_edited', False)
+            
+            # If manually edited OR no previous record exists in database: update audit fields.
+            # Otherwise, preserve the existing database values.
+            if is_manually_edited or existing_fixed_percentage is None:
+                new_fixed_pct = manual_pct
+                new_last_upd = current_time
+                new_upd_by = username
+            else:
+                new_fixed_pct = float(existing_fixed_percentage) if existing_fixed_percentage is not None else None
+                new_last_upd = existing_last_updated
+                new_upd_by = existing_updated_by
 
             if existing_id is not None:
                 # Update the existing record in place
@@ -7301,46 +7310,30 @@ def bulk_save_planning_contributions():
                 version, 'Completed', orig_created_by, current_time, username
             ))
             
-        # 5. Perform Robust Bulk DELETEs
+        # 5. Perform Bulk DELETEs
         if product_del_keys:
-            pids = [k[0] for k in product_del_keys]
             cur.execute("""
                 DELETE FROM planning_contributions
-                WHERE contribution_type = 'Product' AND version = %s AND product_id = ANY(%s);
-            """, (version, pids))
+                WHERE contribution_type = 'Product' AND (product_id, version) IN %s;
+            """, (tuple(product_del_keys),))
             
         if color_del_keys:
-            execute_values(cur, """
-                DELETE FROM planning_contributions pc
-                USING (VALUES %s) AS v(pid, ccode, ver)
-                WHERE pc.contribution_type = 'Color' 
-                  AND pc.product_id = v.pid 
-                  AND pc.color_code = v.ccode 
-                  AND pc.version = v.ver;
-            """, list(color_del_keys), page_size=2000)
+            cur.execute("""
+                DELETE FROM planning_contributions
+                WHERE contribution_type = 'Color' AND (product_id, color_code, version) IN %s;
+            """, (tuple(color_del_keys),))
             
         if size_colorwise_del_keys:
-            execute_values(cur, """
-                DELETE FROM planning_contributions pc
-                USING (VALUES %s) AS v(pid, ccode, szid, ver)
-                WHERE pc.contribution_type = 'Size' 
-                  AND pc.color_code IS NOT NULL 
-                  AND pc.product_id = v.pid 
-                  AND pc.color_code = v.ccode 
-                  AND pc.size_id = v.szid 
-                  AND pc.version = v.ver;
-            """, list(size_colorwise_del_keys), page_size=2000)
+            cur.execute("""
+                DELETE FROM planning_contributions
+                WHERE contribution_type = 'Size' AND color_code IS NOT NULL AND (product_id, color_code, size_id, version) IN %s;
+            """, (tuple(size_colorwise_del_keys),))
             
         if size_overall_del_keys:
-            execute_values(cur, """
-                DELETE FROM planning_contributions pc
-                USING (VALUES %s) AS v(pid, szid, ver)
-                WHERE pc.contribution_type = 'Size' 
-                  AND pc.color_code IS NULL 
-                  AND pc.product_id = v.pid 
-                  AND pc.size_id = v.szid 
-                  AND pc.version = v.ver;
-            """, list(size_overall_del_keys), page_size=2000)
+            cur.execute("""
+                DELETE FROM planning_contributions
+                WHERE contribution_type = 'Size' AND color_code IS NULL AND (product_id, size_id, version) IN %s;
+            """, (tuple(size_overall_del_keys),))
             
         # 6. Perform Bulk INSERTs with RETURNING
         if insert_rows:
@@ -9483,13 +9476,22 @@ def get_balance_qty_data():
                         global_color_code
                     FROM color_master
                     ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                ),
+                primary_color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                        LOWER(TRIM(global_color_code)) AS code_key,
+                        display_color AS primary_display_color
+                    FROM color_master
+                    WHERE category = 'Primary'
+                    ORDER BY LOWER(TRIM(global_color_code)), id ASC
                 )
                 SELECT COUNT(*) FROM (
                     SELECT 1 
                     FROM balance_qty_cache p 
                     LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+                    LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
                     WHERE {where_str}
-                    GROUP BY p.common_production_name, LOWER(TRIM(COALESCE(cm.global_color_code, p.color))), p.size
+                    GROUP BY p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
                 ) as sub;
             """, tuple(params))
         else:
@@ -9535,7 +9537,7 @@ def get_balance_qty_data():
                 LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
                 LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
                 WHERE {where_str}
-                GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(cm.global_color_code, p.color))), p.size
+                GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
                 ORDER BY p.common_production_name ASC, p.size ASC, color ASC
             """
             if not all_records:
@@ -9678,6 +9680,36 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
     # 1. Standalone Query
     # Prioritizes size-specific mappings in product_dia_mapping, and falls back to NULL size_id.
     cur.execute("""
+        WITH dia_size_map AS (
+            SELECT DISTINCT ON (product_id, size_id)
+                product_id, size_id, dia
+            FROM product_dia_mapping
+            WHERE size_id IS NOT NULL
+            ORDER BY product_id, size_id, id ASC
+        ),
+        dia_common_map AS (
+            SELECT DISTINCT ON (product_id)
+                product_id, dia
+            FROM product_dia_mapping
+            WHERE size_id IS NULL
+            ORDER BY product_id, id ASC
+        ),
+        prod_master_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(product_name)))
+                LOWER(TRIM(product_name)) as prod_key,
+                id,
+                fabric_id,
+                fabric_consumption
+            FROM product_master
+            ORDER BY LOWER(TRIM(product_name)), id ASC
+        ),
+        size_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(size)))
+                LOWER(TRIM(size)) as size_key,
+                id
+            FROM size_master
+            ORDER BY LOWER(TRIM(size)), id ASC
+        )
         SELECT 
             'Stand Alone Product' as source_type,
             p.product as name,
@@ -9690,11 +9722,11 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
             COALESCE(pdm.dia, pdm_common.dia) as dia,
             pm.fabric_consumption
         FROM balance_qty_cache p
-        JOIN product_master pm ON LOWER(TRIM(p.product)) = LOWER(TRIM(pm.product_name))
+        JOIN prod_master_map pm ON LOWER(TRIM(p.product)) = pm.prod_key
         LEFT JOIN fabric_master fm ON pm.fabric_id = fm.id
-        LEFT JOIN size_master sm ON LOWER(TRIM(p.size)) = LOWER(TRIM(sm.size))
-        LEFT JOIN product_dia_mapping pdm ON pm.id = pdm.product_id AND pdm.size_id = sm.id
-        LEFT JOIN product_dia_mapping pdm_common ON pm.id = pdm_common.product_id AND pdm_common.size_id IS NULL
+        LEFT JOIN size_map sm ON LOWER(TRIM(p.size)) = sm.size_key
+        LEFT JOIN dia_size_map pdm ON pm.id = pdm.product_id AND pdm.size_id = sm.id
+        LEFT JOIN dia_common_map pdm_common ON pm.id = pdm_common.product_id
         WHERE p.plan_name = %s AND p.financial_year = %s AND p.version = %s
           AND p.from_date = %s AND p.to_date = %s
           AND p.production_type = 'Stand Alone';
@@ -9704,6 +9736,46 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
     # 2. Common Production Query
     # For common production, we group the members in the cache by common_production_name, global color code, and size.
     cur.execute("""
+        WITH color_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                LOWER(TRIM(display_color)) AS color_key,
+                global_color_code
+            FROM color_master
+            ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+        ),
+        primary_color_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                LOWER(TRIM(global_color_code)) AS code_key,
+                display_color AS primary_display_color
+            FROM color_master
+            WHERE category = 'Primary'
+            ORDER BY LOWER(TRIM(global_color_code)), id ASC
+        ),
+        common_prod_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(common_production_name)))
+                LOWER(TRIM(common_production_name)) as cp_key,
+                id,
+                fabric_id,
+                fabric_consumption,
+                common_dia
+            FROM common_production_master
+            ORDER BY LOWER(TRIM(common_production_name)), id ASC
+        ),
+        size_map AS (
+            SELECT DISTINCT ON (LOWER(TRIM(size)))
+                LOWER(TRIM(size)) as size_key,
+                id
+            FROM size_master
+            ORDER BY LOWER(TRIM(size)), id ASC
+        ),
+        cp_dia_map AS (
+            SELECT DISTINCT ON (common_production_id, size_id)
+                common_production_id,
+                size_id,
+                dia
+            FROM common_production_dia_mapping
+            ORDER BY common_production_id, size_id
+        )
         SELECT 
             'Common Production Product' as source_type,
             sub.common_production_name as name,
@@ -9720,23 +9792,24 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
                 p.common_production_name,
                 MIN(p.brand) as brand,
                 MIN(p.category) as category,
-                COALESCE(MAX(cm_prim.display_color), MAX(cm.display_color), MIN(p.color)) as color,
+                COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color,
                 p.size,
                 GREATEST(0.0, SUM(p.calculated_qty) - SUM(p.finished_goods_qty) - SUM(p.production_wip_qty) + SUM(p.pending_production_qty)) as bal_required_qty,
-                COALESCE(cm.global_color_code, p.color) as global_color_code
+                COALESCE(MAX(cm.global_color_code), MIN(p.color)) as global_color_code
             FROM balance_qty_cache p
-            LEFT JOIN color_master cm ON LOWER(TRIM(p.color)) = LOWER(TRIM(cm.display_color))
-            LEFT JOIN color_master cm_prim ON cm.global_color_code = cm_prim.global_color_code AND cm_prim.category = 'Primary'
+            LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+            LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
             WHERE p.plan_name = %s AND p.financial_year = %s AND p.version = %s
               AND p.from_date = %s AND p.to_date = %s
               AND p.common_production_name IS NOT NULL AND p.common_production_name <> ''
               AND p.color <> 'All Colors'
-            GROUP BY p.common_production_name, COALESCE(cm.global_color_code, p.color), p.size
+              AND p.production_type = 'Common Member'
+            GROUP BY p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
         ) sub
-        JOIN common_production_master cpm ON LOWER(TRIM(sub.common_production_name)) = LOWER(TRIM(cpm.common_production_name))
+        JOIN common_prod_map cpm ON LOWER(TRIM(sub.common_production_name)) = cpm.cp_key
         LEFT JOIN fabric_master fm ON cpm.fabric_id = fm.id
-        LEFT JOIN size_master sm ON LOWER(TRIM(sub.size)) = LOWER(TRIM(sm.size))
-        LEFT JOIN common_production_dia_mapping cpdm ON cpm.id = cpdm.common_production_id AND cpdm.size_id = sm.id;
+        LEFT JOIN size_map sm ON LOWER(TRIM(sub.size)) = sm.size_key
+        LEFT JOIN cp_dia_map cpdm ON cpm.id = cpdm.common_production_id AND cpdm.size_id = sm.id;
     """, (plan_name, financial_year, version, from_date, to_date))
     common_rows = cur.fetchall()
 
@@ -10099,17 +10172,32 @@ def export_balance_qty():
         
         if tab == 'common':
             query_str = f"""
+                WITH color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                        LOWER(TRIM(display_color)) AS color_key,
+                        global_color_code
+                    FROM color_master
+                    ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                ),
+                primary_color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                        LOWER(TRIM(global_color_code)) AS code_key,
+                        display_color AS primary_display_color
+                    FROM color_master
+                    WHERE category = 'Primary'
+                    ORDER BY LOWER(TRIM(global_color_code)), id ASC
+                )
                 SELECT p.from_date, p.to_date, MIN(p.brand) as brand, MIN(p.category) as category, p.common_production_name as product,
-                       COALESCE(MAX(cm_prim.display_color), MAX(cm.display_color), MIN(p.color)) as color, p.size,
+                       COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color, p.size,
                        SUM(p.calculated_qty) as calculated_qty, SUM(p.finished_goods_qty) as finished_goods_qty,
                        SUM(p.production_wip_qty) as production_wip_qty, SUM(p.pending_production_qty) as pending_production_qty,
                        GREATEST(0.0, SUM(p.calculated_qty) - SUM(p.finished_goods_qty) - SUM(p.production_wip_qty) + SUM(p.pending_production_qty)) as bal_required_qty,
                        'Common' as production_type, p.common_production_name
                 FROM balance_qty_cache p
-                LEFT JOIN color_master cm ON LOWER(TRIM(p.color)) = LOWER(TRIM(cm.display_color))
-                LEFT JOIN color_master cm_prim ON cm.global_color_code = cm_prim.global_color_code AND cm_prim.category = 'Primary'
+                LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+                LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
                 WHERE {where_str}
-                GROUP BY p.from_date, p.to_date, p.common_production_name, COALESCE(cm.global_color_code, p.color), p.size
+                GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
                 ORDER BY p.common_production_name ASC, p.size ASC, color ASC;
             """
         else:
