@@ -9533,6 +9533,7 @@ async function savePlanningContributionData() {
         planningContribData.rows.forEach((r, idx) => {
             const id = getPlanningContribRowId(r, idx);
             if (selectedPlanningContribRows.has(id)) {
+                r.is_manually_edited = true;
                 rowsToSend.push(r);
             }
         });
@@ -9540,13 +9541,21 @@ async function savePlanningContributionData() {
         // Save all modified rows
         planningContribData.rows.forEach((r, idx) => {
             if (isRowModified(r, idx)) {
+                r.is_manually_edited = true;
                 rowsToSend.push(r);
             }
         });
+        // If no individual row was modified flag, save ALL rows in table
+        if (rowsToSend.length === 0 && planningContribData.rows.length > 0) {
+            planningContribData.rows.forEach(r => {
+                r.is_manually_edited = true;
+                rowsToSend.push(r);
+            });
+        }
     }
 
     if (rowsToSend.length === 0) {
-        alert("No modified or selected rows found to save.");
+        alert("No contribution rows found to save.");
         return;
     }
 
@@ -15228,8 +15237,14 @@ async function executeBulkFixSave() {
             })
         });
 
-        const data = await response.json();
-        if (response.ok && data.success) {
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (jsonErr) {
+            data = { success: false, message: response.statusText || 'Server error or session expired' };
+        }
+
+        if (response.ok && data && data.success) {
             const savedMap = {};
             data.saved_records.forEach(r => {
                 let key = '';

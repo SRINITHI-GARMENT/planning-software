@@ -6493,19 +6493,10 @@ def save_planning_contribution():
             if row_exist:
                 existing_id, existing_fixed_percentage, existing_last_updated, existing_updated_by = row_exist
 
-            # Detect manual edit from frontend flag
-            is_manually_edited = r.get('is_manually_edited', False)
-            
-            # If manually edited OR no previous record exists in database: update audit fields.
-            # Otherwise, preserve the existing database values.
-            if is_manually_edited or existing_fixed_percentage is None:
-                new_fixed_pct = manual_pct
-                new_last_upd = current_time
-                new_upd_by = username
-            else:
-                new_fixed_pct = float(existing_fixed_percentage) if existing_fixed_percentage is not None else None
-                new_last_upd = existing_last_updated
-                new_upd_by = existing_updated_by
+            # Every row submitted to save is authoritatively saved with updated audit fields
+            new_fixed_pct = manual_pct
+            new_last_upd = current_time
+            new_upd_by = username
 
             if existing_id is not None:
                 # Update the existing record in place
@@ -7310,30 +7301,46 @@ def bulk_save_planning_contributions():
                 version, 'Completed', orig_created_by, current_time, username
             ))
             
-        # 5. Perform Bulk DELETEs
+        # 5. Perform Robust Bulk DELETEs
         if product_del_keys:
+            pids = [k[0] for k in product_del_keys]
             cur.execute("""
                 DELETE FROM planning_contributions
-                WHERE contribution_type = 'Product' AND (product_id, version) IN %s;
-            """, (tuple(product_del_keys),))
+                WHERE contribution_type = 'Product' AND version = %s AND product_id = ANY(%s);
+            """, (version, pids))
             
         if color_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Color' AND (product_id, color_code, version) IN %s;
-            """, (tuple(color_del_keys),))
+            execute_values(cur, """
+                DELETE FROM planning_contributions pc
+                USING (VALUES %s) AS v(pid, ccode, ver)
+                WHERE pc.contribution_type = 'Color' 
+                  AND pc.product_id = v.pid 
+                  AND pc.color_code = v.ccode 
+                  AND pc.version = v.ver;
+            """, list(color_del_keys), page_size=2000)
             
         if size_colorwise_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Size' AND color_code IS NOT NULL AND (product_id, color_code, size_id, version) IN %s;
-            """, (tuple(size_colorwise_del_keys),))
+            execute_values(cur, """
+                DELETE FROM planning_contributions pc
+                USING (VALUES %s) AS v(pid, ccode, szid, ver)
+                WHERE pc.contribution_type = 'Size' 
+                  AND pc.color_code IS NOT NULL 
+                  AND pc.product_id = v.pid 
+                  AND pc.color_code = v.ccode 
+                  AND pc.size_id = v.szid 
+                  AND pc.version = v.ver;
+            """, list(size_colorwise_del_keys), page_size=2000)
             
         if size_overall_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Size' AND color_code IS NULL AND (product_id, size_id, version) IN %s;
-            """, (tuple(size_overall_del_keys),))
+            execute_values(cur, """
+                DELETE FROM planning_contributions pc
+                USING (VALUES %s) AS v(pid, szid, ver)
+                WHERE pc.contribution_type = 'Size' 
+                  AND pc.color_code IS NULL 
+                  AND pc.product_id = v.pid 
+                  AND pc.size_id = v.szid 
+                  AND pc.version = v.ver;
+            """, list(size_overall_del_keys), page_size=2000)
             
         # 6. Perform Bulk INSERTs with RETURNING
         if insert_rows:
