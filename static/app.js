@@ -9533,7 +9533,6 @@ async function savePlanningContributionData() {
         planningContribData.rows.forEach((r, idx) => {
             const id = getPlanningContribRowId(r, idx);
             if (selectedPlanningContribRows.has(id)) {
-                r.is_manually_edited = true;
                 rowsToSend.push(r);
             }
         });
@@ -9541,21 +9540,13 @@ async function savePlanningContributionData() {
         // Save all modified rows
         planningContribData.rows.forEach((r, idx) => {
             if (isRowModified(r, idx)) {
-                r.is_manually_edited = true;
                 rowsToSend.push(r);
             }
         });
-        // If no individual row was modified flag, save ALL rows in table
-        if (rowsToSend.length === 0 && planningContribData.rows.length > 0) {
-            planningContribData.rows.forEach(r => {
-                r.is_manually_edited = true;
-                rowsToSend.push(r);
-            });
-        }
     }
 
     if (rowsToSend.length === 0) {
-        alert("No contribution rows found to save.");
+        alert("No modified or selected rows found to save.");
         return;
     }
 
@@ -10401,30 +10392,39 @@ async function saveDerivationOverrides() {
     const loader = document.getElementById('planning-deriv-loader');
     if (loader) loader.classList.remove('hidden');
 
-    // Collect contributions
+    // Collect and sanitize contributions
     const product_contribs = [];
     const color_contribs = [];
     const size_contribs = [];
 
+    const parseNumberOrZero = (v) => {
+        if (v === null || v === undefined || v === '') return 0.0;
+        const num = parseFloat(v);
+        return (!isNaN(num) && isFinite(num)) ? num : 0.0;
+    };
+
     derivProductsData.forEach(p => {
+        if (!p || p.product_id === undefined || p.product_id === null) return;
         product_contribs.push({
             product_id: p.product_id,
-            manual_pct: p.product_contribution_pct
+            manual_pct: parseNumberOrZero(p.product_contribution_pct)
         });
 
-        p.colors.forEach(c => {
+        (p.colors || []).forEach(c => {
+            if (!c || !c.color_code) return;
             color_contribs.push({
                 product_id: p.product_id,
                 color_code: c.color_code,
-                manual_pct: c.contribution_pct
+                manual_pct: parseNumberOrZero(c.contribution_pct)
             });
 
-            c.sizes.forEach(s => {
+            (c.sizes || []).forEach(s => {
+                if (!s) return;
                 size_contribs.push({
                     product_id: p.product_id,
                     color_code: c.color_code,
-                    size_id: s.size_id,
-                    manual_pct: s.contribution_pct
+                    size_id: s.size_id !== undefined ? s.size_id : null,
+                    manual_pct: parseNumberOrZero(s.contribution_pct)
                 });
             });
         });
@@ -10438,12 +10438,32 @@ async function saveDerivationOverrides() {
                 version: contribVer,
                 product_contributions: product_contribs,
                 color_contributions: color_contribs,
-                size_contributions: size_contribs
+                size_contributions: size_contribs,
+                size_contribs: size_contribs
             })
         });
-        const res = await response.json();
 
-        if (response.ok && res.success) {
+        let res = null;
+        try {
+            res = await response.json();
+        } catch (jsonErr) {
+            console.warn("Response is not JSON:", jsonErr);
+        }
+
+        if (!response.ok) {
+            let errorMsg = (res && res.message) ? res.message : `Server error (${response.status})`;
+            if (response.status === 401) errorMsg = "Session expired. Please log in again.";
+            else if (response.status === 403) errorMsg = "Permission denied.";
+            
+            if (typeof showToast !== 'undefined') {
+                showToast('Error', errorMsg, 'error');
+            } else {
+                alert(errorMsg);
+            }
+            return;
+        }
+
+        if (res && res.success) {
             // Automatically trigger quantity derivation generation
             const planVal = document.getElementById('deriv-filter-plan').value;
             let planName = '';
@@ -10466,8 +10486,15 @@ async function saveDerivationOverrides() {
                         overwrite: true
                     })
                 });
-                const genData = await genRes.json();
-                if (genRes.ok && genData.success) {
+
+                let genData = null;
+                try {
+                    genData = await genRes.json();
+                } catch (e) {
+                    console.warn("Gen response is not JSON:", e);
+                }
+
+                if (genRes.ok && genData && genData.success) {
                     if (typeof showToast !== 'undefined') {
                         showToast('Success', "Quantity derivation saved and generated successfully!", 'success');
                     } else {
@@ -10475,10 +10502,11 @@ async function saveDerivationOverrides() {
                     }
                     loadDerivationPage();
                 } else {
+                    const failMsg = (genData && genData.message) ? genData.message : `Generation failed (${genRes.status})`;
                     if (typeof showToast !== 'undefined') {
-                        showToast('Warning', "Contributions saved, but generation failed: " + (genData.message || ''), 'warning');
+                        showToast('Warning', "Contributions saved, but generation failed: " + failMsg, 'warning');
                     } else {
-                        alert("Contributions saved, but generation failed: " + (genData.message || ''));
+                        alert("Contributions saved, but generation failed: " + failMsg);
                     }
                 }
             } else {
@@ -10490,18 +10518,20 @@ async function saveDerivationOverrides() {
                 loadDerivationPage();
             }
         } else {
+            const errText = (res && res.message) ? res.message : "Failed to save contributions.";
             if (typeof showToast !== 'undefined') {
-                showToast('Error', res.message || "Failed to save contributions.", 'error');
+                showToast('Error', errText, 'error');
             } else {
-                alert(res.message || "Failed to save contributions.");
+                alert(errText);
             }
         }
     } catch (err) {
-        console.error(err);
+        console.error("Save contributions error:", err);
+        const netErr = err && err.message ? err.message : "Network error saving contributions.";
         if (typeof showToast !== 'undefined') {
-            showToast('Error', "Error saving contributions.", 'error');
+            showToast('Error', netErr, 'error');
         } else {
-            alert("Error saving contributions.");
+            alert(netErr);
         }
     } finally {
         if (loader) loader.classList.add('hidden');
@@ -15237,14 +15267,8 @@ async function executeBulkFixSave() {
             })
         });
 
-        let data = null;
-        try {
-            data = await response.json();
-        } catch (jsonErr) {
-            data = { success: false, message: response.statusText || 'Server error or session expired' };
-        }
-
-        if (response.ok && data && data.success) {
+        const data = await response.json();
+        if (response.ok && data.success) {
             const savedMap = {};
             data.saved_records.forEach(r => {
                 let key = '';

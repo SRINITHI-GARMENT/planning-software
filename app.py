@@ -7772,109 +7772,108 @@ def save_qty_derivation_contributions():
     from psycopg2.extras import execute_values
     
     t_start = time.time()
-    
-    data = request.json or {}
-    version = data.get('version', 'Standard').strip() or 'Standard'
-    product_contribs = data.get('product_contributions', [])
-    color_contribs = data.get('color_contributions', [])
-    size_contribs = data.get('size_contributions', [])
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
+    conn = None
     
     try:
+        data = request.get_json(silent=True) or {}
+        raw_version = data.get('version')
+        if raw_version and isinstance(raw_version, str):
+            version = raw_version.strip() or 'Standard'
+        else:
+            version = 'Standard'
+            
+        product_contribs = data.get('product_contributions') or data.get('product_contribs') or []
+        color_contribs = data.get('color_contributions') or data.get('color_contribs') or []
+        size_contribs = data.get('size_contributions') or data.get('size_contribs') or []
+        
         t_prep_start = time.time()
-        
-        default_from_month = 'April'
-        default_from_year = 2026
-        default_to_month = 'December'
-        default_to_year = 2026
-        
         username = session.get('username', 'admin')
         
-        # 1. Gather all unique target product IDs from the payload
-        all_product_ids = set()
+        # 1. Gather all unique target product IDs from the payload safely
+        candidate_product_ids = set()
         for pc in product_contribs:
-            all_product_ids.add(int(pc['product_id']))
+            if isinstance(pc, dict) and pc.get('product_id') is not None:
+                try:
+                    candidate_product_ids.add(int(pc['product_id']))
+                except (ValueError, TypeError):
+                    pass
         for cc in color_contribs:
-            all_product_ids.add(int(cc['product_id']))
+            if isinstance(cc, dict) and cc.get('product_id') is not None:
+                try:
+                    candidate_product_ids.add(int(cc['product_id']))
+                except (ValueError, TypeError):
+                    pass
         for sc in size_contribs:
-            all_product_ids.add(int(sc['product_id']))
+            if isinstance(sc, dict) and sc.get('product_id') is not None:
+                try:
+                    candidate_product_ids.add(int(sc['product_id']))
+                except (ValueError, TypeError):
+                    pass
             
-        product_ids_list = list(all_product_ids)
-        t_prep = (time.time() - t_prep_start) * 1000
+        candidate_product_ids_list = list(candidate_product_ids)
         
-        # 2. Bulk Metadata Lookup & Audit Retrieval
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # 2. Bulk Metadata Lookup & Validation against master tables
         t_meta_start = time.time()
-        existing_audit_map = {}
-        if product_ids_list:
-            # Query existing contributions for brand and audit/fixed info
-            cur.execute("""
-                SELECT product_id, color_code, size_id, contribution_type,
-                       brand_id, fixed_percentage, last_updated, updated_by
-                FROM planning_contributions
-                WHERE product_id = ANY(%s) AND version = %s;
-            """, (product_ids_list, version))
-            for row in cur.fetchall():
-                pid = row[0]
-                ccode = row[1]
-                szid = row[2]
-                ctype = row[3]
-                bid = row[4]
-                fixed_pct = row[5]
-                last_upd = row[6]
-                upd_by = row[7]
-                
-                # Build audit map using exact contribution-level keys
-                if ctype == 'Product':
-                    key = ('Product', pid, version)
-                elif ctype == 'Color':
-                    key = ('Color', pid, ccode, version)
-                elif ctype == 'Size':
-                    key = ('Size', pid, ccode, szid, version) # ccode is None for overall
-                else:
-                    continue
-                    
-                existing_audit_map[key] = {
-                    'fixed_percentage': fixed_pct,
-                    'last_updated': last_upd,
-                    'updated_by': upd_by
-                }
-                
-            # Query brand fallbacks from product_master
-            cur.execute("SELECT id, brand_id FROM product_master WHERE id = ANY(%s);", (product_ids_list,))
+        brand_map = {}
+        if candidate_product_ids_list:
+            cur.execute("SELECT id, brand_id FROM product_master WHERE id = ANY(%s);", (candidate_product_ids_list,))
             brand_map = {row[0]: row[1] for row in cur.fetchall()}
-        else:
-            brand_map = {}
+            
+        valid_product_ids = set(brand_map.keys())
+        product_ids_list = [pid for pid in candidate_product_ids_list if pid in valid_product_ids]
+        
+        # Validate size IDs against size_master
+        candidate_size_ids = set()
+        for sc in size_contribs:
+            if isinstance(sc, dict) and sc.get('size_id') is not None:
+                try:
+                    candidate_size_ids.add(int(sc['size_id']))
+                except (ValueError, TypeError):
+                    pass
+        valid_size_ids = set()
+        if candidate_size_ids:
+            cur.execute("SELECT id FROM size_master WHERE id = ANY(%s);", (list(candidate_size_ids),))
+            valid_size_ids = {row[0] for row in cur.fetchall()}
             
         t_meta = (time.time() - t_meta_start) * 1000
         
-        # 3. Build deletion key sets and check uniqueness
-        t_del_start = time.time()
-        
-        product_del_keys = set()
-        color_del_keys = set()
-        size_colorwise_del_keys = set()
-        size_overall_del_keys = set()
-        
+        # 3. Build insert rows
         product_insert_rows = []
         color_insert_rows = []
         size_insert_rows = []
         
+        # Helper for safe float conversion
+        def parse_pct(v):
+            if v is None:
+                return 0.0
+            try:
+                f = float(v)
+                if math.isnan(f) or math.isinf(f):
+                    return 0.0
+                return max(0.0, min(100.0, f))
+            except (ValueError, TypeError):
+                return 0.0
+
+        current_time = datetime.now()
+        
         # Process Product Contributions
         seen_product_keys = set()
         for pc in product_contribs:
-            p_id = int(pc['product_id'])
-            pct = float(pc['manual_pct'])
-            
-            if p_id in seen_product_keys:
+            if not isinstance(pc, dict):
+                continue
+            try:
+                p_id = int(pc.get('product_id'))
+            except (ValueError, TypeError):
+                continue
+            if p_id not in valid_product_ids or p_id in seen_product_keys:
                 continue
             seen_product_keys.add(p_id)
             
+            pct = parse_pct(pc.get('manual_pct'))
             b_id = brand_map.get(p_id)
-            product_del_keys.add((p_id, version))
-            
-            current_time = datetime.now()
             product_insert_rows.append((
                 'Product', p_id, None, None, b_id, pct, version, 'Draft', username,
                 pct, current_time, username
@@ -7883,19 +7882,26 @@ def save_qty_derivation_contributions():
         # Process Color Contributions
         seen_color_keys = set()
         for cc in color_contribs:
-            p_id = int(cc['product_id'])
-            col_code = cc['color_code']
-            pct = float(cc['manual_pct'])
-            
+            if not isinstance(cc, dict):
+                continue
+            try:
+                p_id = int(cc.get('product_id'))
+            except (ValueError, TypeError):
+                continue
+            col_code = cc.get('color_code')
+            if not col_code or p_id not in valid_product_ids:
+                continue
+            col_code = str(col_code).strip()
+            if not col_code:
+                continue
+                
             key = (p_id, col_code)
             if key in seen_color_keys:
                 continue
             seen_color_keys.add(key)
             
+            pct = parse_pct(cc.get('manual_pct'))
             b_id = brand_map.get(p_id)
-            color_del_keys.add((p_id, col_code, version))
-            
-            current_time = datetime.now()
             color_insert_rows.append((
                 'Color', p_id, col_code, None, b_id, pct, version, 'Draft', username,
                 pct, current_time, username
@@ -7905,22 +7911,38 @@ def save_qty_derivation_contributions():
         seen_size_colorwise_keys = set()
         seen_size_overall_keys = set()
         for sc in size_contribs:
-            p_id = int(sc['product_id'])
+            if not isinstance(sc, dict):
+                continue
+            try:
+                p_id = int(sc.get('product_id'))
+            except (ValueError, TypeError):
+                continue
+            if p_id not in valid_product_ids:
+                continue
+                
+            raw_sz = sc.get('size_id')
+            try:
+                sz_id = int(raw_sz) if raw_sz is not None else None
+            except (ValueError, TypeError):
+                sz_id = None
+                
+            if sz_id is not None and sz_id not in valid_size_ids:
+                sz_id = None
+                
             col_code = sc.get('color_code')
-            sz_id = int(sc['size_id'])
-            pct = float(sc['manual_pct'])
-            
+            if col_code:
+                col_code = str(col_code).strip()
+                if not col_code:
+                    col_code = None
+                    
+            pct = parse_pct(sc.get('manual_pct'))
             b_id = brand_map.get(p_id)
-            current_time = datetime.now()
             
             if col_code:
                 key = (p_id, col_code, sz_id)
                 if key in seen_size_colorwise_keys:
                     continue
                 seen_size_colorwise_keys.add(key)
-                
-                size_colorwise_del_keys.add((p_id, col_code, sz_id, version))
-                
                 size_insert_rows.append((
                     'Size', p_id, col_code, sz_id, b_id, pct, version, 'Draft', username,
                     pct, current_time, username
@@ -7930,50 +7952,26 @@ def save_qty_derivation_contributions():
                 if key in seen_size_overall_keys:
                     continue
                 seen_size_overall_keys.add(key)
-                
-                size_overall_del_keys.add((p_id, sz_id, version))
-                
                 size_insert_rows.append((
                     'Size', p_id, None, sz_id, b_id, pct, version, 'Draft', username,
                     pct, current_time, username
                 ))
                 
-        # 4. Perform Bulk DELETEs
-        del_count = 0
+        t_prep = (time.time() - t_prep_start) * 1000
         
-        if product_del_keys:
+        # 4. Perform Bulk DELETE for target products and version
+        t_del_start = time.time()
+        del_count = 0
+        if product_ids_list:
             cur.execute("""
                 DELETE FROM planning_contributions
-                WHERE contribution_type = 'Product' AND (product_id, version) IN %s;
-            """, (tuple(product_del_keys),))
-            del_count += cur.rowcount
-            
-        if color_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Color' AND (product_id, color_code, version) IN %s;
-            """, (tuple(color_del_keys),))
-            del_count += cur.rowcount
-            
-        if size_colorwise_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Size' AND color_code IS NOT NULL AND (product_id, color_code, size_id, version) IN %s;
-            """, (tuple(size_colorwise_del_keys),))
-            del_count += cur.rowcount
-            
-        if size_overall_del_keys:
-            cur.execute("""
-                DELETE FROM planning_contributions
-                WHERE contribution_type = 'Size' AND color_code IS NULL AND (product_id, size_id, version) IN %s;
-            """, (tuple(size_overall_del_keys),))
-            del_count += cur.rowcount
-            
+                WHERE product_id = ANY(%s) AND version = %s;
+            """, (product_ids_list, version))
+            del_count = cur.rowcount
         t_del = (time.time() - t_del_start) * 1000
         
         # 5. Perform Bulk INSERTs
         t_ins_start = time.time()
-        
         insert_query = """
             INSERT INTO planning_contributions (
                 contribution_type, product_id, color_code, size_id, brand_id,
@@ -7984,13 +7982,13 @@ def save_qty_derivation_contributions():
         
         ins_count = 0
         if product_insert_rows:
-            execute_values(cur, insert_query, product_insert_rows)
+            execute_values(cur, insert_query, product_insert_rows, page_size=1000)
             ins_count += len(product_insert_rows)
         if color_insert_rows:
-            execute_values(cur, insert_query, color_insert_rows)
+            execute_values(cur, insert_query, color_insert_rows, page_size=1000)
             ins_count += len(color_insert_rows)
         if size_insert_rows:
-            execute_values(cur, insert_query, size_insert_rows)
+            execute_values(cur, insert_query, size_insert_rows, page_size=1000)
             ins_count += len(size_insert_rows)
             
         t_ins = (time.time() - t_ins_start) * 1000
@@ -8001,15 +7999,11 @@ def save_qty_derivation_contributions():
         t_commit = (time.time() - t_commit_start) * 1000
         
         t_total = (time.time() - t_start) * 1000
-        
-        # Performance Logging
-        logger.debug("[PERF] Save contributions total: %.2f ms (prep=%.2fms, meta=%.2fms, del=%d rows/%.2fms, ins=%d rows/%.2fms, commit=%.2fms)" % (
-            t_total, t_prep, t_meta, del_count, t_del, ins_count, t_ins, t_commit
-        ))
+        logger.info(f"[QTY_DERIVATION] Saved contributions successfully for version '{version}': {ins_count} rows inserted, {del_count} rows deleted in {t_total:.2f}ms")
         
         cur.close()
         return jsonify({
-            'success': True, 
+            'success': True,
             'message': 'Contributions saved successfully.',
             'perf_log': {
                 'payload_prep_ms': t_prep,
@@ -8023,9 +8017,12 @@ def save_qty_derivation_contributions():
         
     except Exception as e:
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         logger.error(f"Error saving planning contributions: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': 'An error occurred while saving contributions. Please try again.'}), 500
+        return jsonify({'success': False, 'message': f'Error saving contributions: {str(e)}'}), 500
     finally:
         if conn:
             release_db_connection(conn)
@@ -8298,7 +8295,7 @@ def generate_qty_derivation():
                     size, size_contribution, final_qty, generated_by
                 ) VALUES %s;
             """
-            execute_values(cur, insert_query, records_to_insert)
+            execute_values(cur, insert_query, records_to_insert, page_size=2000)
             
             # Invalidate balance qty cache for this plan and version
             cur.execute("""
@@ -9442,7 +9439,7 @@ def get_balance_qty_data():
             where_clauses.append("p.color <> 'All Colors'")
             where_clauses.append("p.production_type = 'Common Member'")
         else:
-            where_clauses.append("p.common_production_name IS NULL OR p.common_production_name = ''")
+            where_clauses.append("(p.common_production_name IS NULL OR p.common_production_name = '')")
             
         if brand:
             where_clauses.append("p.brand = %s")
