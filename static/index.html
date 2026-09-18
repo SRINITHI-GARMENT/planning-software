@@ -18,6 +18,113 @@
     <!-- html2pdf.js (PDF Export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Scoped styles for Pending Plan Tab & Stock WIP */
+        .pending-col-filter-btn,
+        .cutting-col-filter-btn,
+        .stock-wip-col-filter-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text-muted);
+            border-radius: 4px;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pending-col-filter-btn:hover,
+        .cutting-col-filter-btn:hover,
+        .stock-wip-col-filter-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .pending-col-filter-btn.active,
+        .cutting-col-filter-btn.active,
+        .stock-wip-col-filter-btn.active {
+            background: #3b82f6;
+            color: #fff;
+            border-color: #3b82f6;
+            box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+        }
+
+        .pending-filter-checkbox-item,
+        .cutting-filter-checkbox-item,
+        .stock-wip-filter-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11.5px;
+            color: var(--text-secondary);
+            padding: 3px 4px;
+            border-radius: 3px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .cutting-filter-checkbox-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .cutting-filter-checkbox-item input[type="checkbox"] {
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        .cutting-group-fabric-row {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.16) 0%, rgba(59, 130, 246, 0.04) 100%) !important;
+            border-top: 2px solid rgba(59, 130, 246, 0.3) !important;
+            font-weight: 700;
+        }
+
+        .cutting-group-color-row {
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.12) 0%, rgba(139, 92, 246, 0.02) 100%) !important;
+            border-top: 1px solid rgba(139, 92, 246, 0.2) !important;
+            font-weight: 600;
+        }
+
+        .cutting-group-dia-row {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.10) 0%, rgba(16, 185, 129, 0.02) 100%) !important;
+            border-top: 1px solid rgba(16, 185, 129, 0.18) !important;
+            font-weight: 600;
+        }
+
+        .cutting-group-toggle-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+            border-radius: 4px;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            cursor: pointer;
+            margin-right: 6px;
+            transition: all 0.15s ease;
+        }
+
+        .cutting-group-toggle-btn:hover {
+            background: var(--primary-color);
+            color: #fff;
+        }
+
+        .cutting-subtotal-row {
+            background: rgba(59, 130, 246, 0.09) !important;
+            border-top: 1px dashed rgba(59, 130, 246, 0.35) !important;
+            border-bottom: 2px solid rgba(59, 130, 246, 0.3) !important;
+            font-weight: 700;
+        }
+    </style>
 </head>
 
 <body>
@@ -152,6 +259,11 @@
                         <i class="fa-solid fa-calculator"></i>
                         <span>Next Qty Derivation</span>
                     </button>
+                    <button id="tab-pending-qty-planning" class="nav-tab-btn"
+                        onclick="switchTab('pending-qty-planning')">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span>Pending Qty Planning</span>
+                    </button>
                     <button id="tab-balance-qty" class="nav-tab-btn" onclick="switchTab('balance-qty')">
                         <i class="fa-solid fa-scale-balanced"></i>
                         <span>Bal Req Qty</span>
@@ -191,6 +303,10 @@
                     <button id="tab-product-master" class="nav-tab-btn" onclick="switchTab('product-master')">
                         <i class="fa-solid fa-shirt"></i>
                         <span>Product Master</span>
+                    </button>
+                    <button id="tab-lead-days-master" class="nav-tab-btn" onclick="switchTab('lead-days-master')">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span>Lead Days Master</span>
                     </button>
                 </nav>
 
@@ -953,6 +1069,7 @@
                                                     <th style="width: 50px;">#</th>
                                                     <th id="planning-contrib-th-item">Product Master</th>
                                                     <th>Mapped Sales Products</th>
+                                                    <th style="width: 240px; text-align: center;">Sales Period</th>
                                                     <th class="text-right" style="width: 120px;">Average Sales %</th>
                                                     <th class="text-right" style="width: 120px;">Last Year %</th>
                                                     <th class="text-right"
@@ -1026,7 +1143,7 @@
                                                 style="position: sticky; bottom: 0; background: var(--bg-card); z-index: 2; box-shadow: inset 0 1px 0 var(--border-color), inset 0 2px 0 var(--border-color);">
                                                 <tr id="planning-contrib-tfoot-row"
                                                     style="font-weight: bold; background: rgba(255,255,255,0.03);">
-                                                    <td colspan="4">TOTAL</td>
+                                                    <td colspan="5">TOTAL</td>
                                                     <td class="text-right" id="total-contrib-avg">-</td>
                                                     <td class="text-right" id="total-contrib-ly">-</td>
                                                     <td class="text-right" id="total-contrib-suggested">0.00%</td>
@@ -1663,6 +1780,773 @@
                         </div>
                     </div>
 
+                    <!-- PENDING QTY PLANNING PANEL -->
+                    <div id="pending-qty-planning-panel" class="tab-panel hidden">
+                        <div class="contribution-filter-bar" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div class="section-title" style="margin-bottom: 0;">
+                                <h3><i class="fa-solid fa-layer-group"></i> Pending Qty Planning</h3>
+                                <p style="margin-bottom: 0;">Determine Net Pending Qty after FG & WIP deduction, evaluate shared fabric pool
+                                    feasibility, manage priorities, and build immediate cutting plans.</p>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="calculatePendingQtyPlan(true)"
+                                    title="Recalculate and refresh plan snapshot"
+                                    style="height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 6px; font-size: 12.5px;">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Recalculate & Refresh
+                                </button>
+                                <button id="pending-confirm-btn" class="btn btn-success"
+                                    onclick="confirmPendingQtyPlan()" title="Confirm plan and freeze allocation"
+                                    style="height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; background: #10b981; color: #fff; border: none; border-radius: 6px;">
+                                    <i class="fa-solid fa-check-double"></i> Confirm Plan
+                                </button>
+                                <div class="dropdown" style="position: relative; display: inline-block;">
+                                    <button class="btn btn-outline" onclick="exportCurrentPendingTabExcel()"
+                                        title="Export current tab to Excel/CSV"
+                                        style="height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 6px; font-size: 12.5px;">
+                                        <i class="fa-solid fa-file-excel"></i> Export Excel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- KPI Summary Cards -->
+                        <div id="pending-kpi-summary-cards"
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                            <div class="card"
+                                style="padding: 14px 16px; border-radius: 8px; border-left: 4px solid var(--primary-color);">
+                                <div
+                                    style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">
+                                    Total Pending Qty</div>
+                                <div id="kpi-total-pending-qty"
+                                    style="font-size: 22px; font-weight: 700; color: var(--text-primary); margin-top: 4px;">
+                                    0</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Net requirement after FG/WIP
+                                </div>
+                            </div>
+                            <div class="card"
+                                style="padding: 14px 16px; border-radius: 8px; border-left: 4px solid #10b981;">
+                                <div
+                                    style="font-size: 11.5px; font-weight: 600; color: #10b981; text-transform: uppercase;">
+                                    Cut Now Qty</div>
+                                <div id="kpi-cut-now-qty"
+                                    style="font-size: 22px; font-weight: 700; color: #10b981; margin-top: 4px;">0</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">100% fabric ready to cut</div>
+                            </div>
+                            <div class="card"
+                                style="padding: 14px 16px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                                <div
+                                    style="font-size: 11.5px; font-weight: 600; color: #f59e0b; text-transform: uppercase;">
+                                    Partial Cut Qty</div>
+                                <div id="kpi-partial-qty"
+                                    style="font-size: 22px; font-weight: 700; color: #f59e0b; margin-top: 4px;">0</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Partially cuttable from fabric
+                                </div>
+                            </div>
+                            <div class="card"
+                                style="padding: 14px 16px; border-radius: 8px; border-left: 4px solid #ef4444;">
+                                <div
+                                    style="font-size: 11.5px; font-weight: 600; color: #ef4444; text-transform: uppercase;">
+                                    Fabric Shortage Qty</div>
+                                <div id="kpi-shortage-qty"
+                                    style="font-size: 22px; font-weight: 700; color: #ef4444; margin-top: 4px;">0</div>
+                                <div id="kpi-shortage-kg-sub" style="font-size: 11px; color: #ef4444;">Shortage: 0 KG
+                                </div>
+                            </div>
+                            <div class="card"
+                                style="padding: 14px 16px; border-radius: 8px; border-left: 4px solid #8b5cf6;">
+                                <div
+                                    style="font-size: 11.5px; font-weight: 600; color: #8b5cf6; text-transform: uppercase;">
+                                    Fabric Pools</div>
+                                <div id="kpi-fabric-pools-summary"
+                                    style="font-size: 13.5px; font-weight: 600; color: var(--text-primary); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <span style="color: #10b981;"><i class="fa-solid fa-circle-check"></i> <span
+                                            id="kpi-pool-enough">0</span> Enough</span>
+                                    <span style="color: #f59e0b;"><i class="fa-solid fa-circle-exclamation"></i> <span
+                                            id="kpi-pool-partial">0</span> Partial</span>
+                                    <span style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> <span
+                                            id="kpi-pool-shortage">0</span> Shortage</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Status: <span
+                                        id="kpi-plan-status-badge" class="badge"
+                                        style="background: #3b82f6; color: #fff; font-size: 10.5px; padding: 2px 6px;">Draft</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3 Sub-Tabs Navigation -->
+                        <div class="planning-tabs"
+                            style="display: flex; gap: 4px; border-bottom: 2px solid var(--border-color); margin-bottom: 16px;">
+                            <button id="pending-subtab-btn-pending" class="nav-tab-btn active"
+                                onclick="switchPendingSubTab('pending-plan')"
+                                style="padding: 9px 18px; font-size: 13px; font-weight: 600;">
+                                <i class="fa-solid fa-list-check"></i> 1. Pending Qty Plan
+                            </button>
+                            <button id="pending-subtab-btn-cutting" class="nav-tab-btn"
+                                onclick="switchPendingSubTab('cutting-plan')"
+                                style="padding: 9px 18px; font-size: 13px; font-weight: 600;">
+                                <i class="fa-solid fa-scissors"></i> 2. Cutting Plan
+                            </button>
+                            <button id="pending-subtab-btn-fabric" class="nav-tab-btn"
+                                onclick="switchPendingSubTab('fab-required')"
+                                style="padding: 9px 18px; font-size: 13px; font-weight: 600;">
+                                <i class="fa-solid fa-layer-group"></i> 3. Fab Required
+                            </button>
+                        </div>
+
+                        <!-- TAB 1: PENDING QTY PLAN -->
+                        <div id="pending-subtab-view-pending" class="pending-subtab-view">
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+                                <button id="pending-plan-clear-all-filters-btn" class="btn btn-sm btn-outline hidden"
+                                    onclick="clearAllPendingPlanHeaderFilters()"
+                                    title="Clear all active column filters"
+                                    style="height: 28px; padding: 0 10px; font-size: 11.5px; color: #f59e0b; border-color: #f59e0b;">
+                                    <i class="fa-solid fa-filter-circle-xmark"></i> Clear Filters
+                                </button>
+                            </div>
+
+                            <!-- Excel Filter Popup Dropdown for Tab 1 (Positioned dynamically) -->
+                            <div id="pending-plan-filter-popup" class="pending-filter-popup hidden"
+                                style="position: fixed; z-index: 99999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 240px; padding: 12px; font-size: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span id="pending-popup-col-title" style="font-weight: 700; font-size: 12px; color: var(--text-primary);">Filter</span>
+                                    <button onclick="closePendingPlanFilterPopup()"
+                                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+
+                                <!-- Categorical Section -->
+                                <div id="pending-popup-categorical-section">
+                                    <input type="text" id="pending-popup-search" placeholder="Search..."
+                                        oninput="onPendingFilterSearchInput(this.value)" class="form-input"
+                                        style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; margin-bottom: 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                                        <a href="javascript:void(0)" onclick="pendingFilterSelectAll(true)"
+                                            style="color: var(--primary-color); text-decoration: none;">Select All</a>
+                                        <a href="javascript:void(0)" onclick="pendingFilterSelectAll(false)"
+                                            style="color: var(--text-muted); text-decoration: none;">Clear All</a>
+                                    </div>
+                                    <div id="pending-popup-checkbox-list"
+                                        style="max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,0.06); padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.15); margin-bottom: 10px;">
+                                    </div>
+                                </div>
+
+                                <!-- Numeric Section -->
+                                <div id="pending-popup-numeric-section" class="hidden">
+                                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Condition</label>
+                                    <select id="pending-popup-num-operator" class="form-select" onchange="onPendingNumericOperatorChange(this.value)"
+                                        style="width: 100%; font-size: 11.5px; height: 30px; margin-bottom: 8px;">
+                                        <option value="eq">Equals (=)</option>
+                                        <option value="neq">Not Equal (!=)</option>
+                                        <option value="gt">Greater Than (&gt;)</option>
+                                        <option value="gte">Greater Than or Equal (&gt;=)</option>
+                                        <option value="lt">Less Than (&lt;)</option>
+                                        <option value="lte">Less Than or Equal (&lt;=)</option>
+                                        <option value="between">Between</option>
+                                    </select>
+                                    <div id="pending-popup-num-val1-wrap" style="margin-bottom: 8px;">
+                                        <input type="number" id="pending-popup-num-val1" class="form-input" placeholder="Value..."
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                    <div id="pending-popup-num-val2-wrap" class="hidden" style="margin-bottom: 8px;">
+                                        <input type="number" id="pending-popup-num-val2" class="form-input" placeholder="To value..."
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                    <button class="btn btn-sm btn-outline" onclick="clearPendingPlanFilterCurrent()"
+                                        style="padding: 3px 10px; font-size: 11px;">Clear</button>
+                                    <button class="btn btn-sm btn-primary" onclick="applyPendingPlanFilterCurrent()"
+                                        style="padding: 3px 12px; font-size: 11px;">Apply</button>
+                                </div>
+                            </div>
+
+                            <div class="card" style="padding: 0; overflow: hidden; border-radius: 8px;">
+                                <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
+                                    <table class="table"
+                                        style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                                        <thead
+                                            style="position: sticky; top: 0; background: var(--bg-card); z-index: 10; border-bottom: 2px solid var(--border-color);">
+                                            <tr>
+                                                <th style="width: 40px; text-align: center;"></th>
+                                                <th style="min-width: 110px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Product Type</span>
+                                                        <button id="pending-filter-btn-item_type" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('item_type', event)" title="Filter by Product Type">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 100px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Brand</span>
+                                                        <button id="pending-filter-btn-brand" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('brand', event)" title="Filter by Brand">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Category</span>
+                                                        <button id="pending-filter-btn-category" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('category', event)" title="Filter by Category">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 160px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Product / Common Group</span>
+                                                        <button id="pending-filter-btn-product_name" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('product_name', event)" title="Filter by Product / Group">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Color</span>
+                                                        <button id="pending-filter-btn-color" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('color', event)" title="Filter by Color">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 70px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Size</span>
+                                                        <button id="pending-filter-btn-size" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('size', event)" title="Filter by Size">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 120px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Pending Order Qty</span>
+                                                        <button id="pending-filter-btn-requirement_qty" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('requirement_qty', event)" title="Filter by Pending Order Qty">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>FG Stock</span>
+                                                        <button id="pending-filter-btn-fg_qty" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('fg_qty', event)" title="Filter by FG Stock">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>WIP Qty</span>
+                                                        <button id="pending-filter-btn-wip_qty" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('wip_qty', event)" title="Filter by WIP Qty">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Already Planned</span>
+                                                        <button id="pending-filter-btn-already_planned_qty" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('already_planned_qty', event)" title="Filter by Already Planned">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 120px; text-align: right; vertical-align: middle; color: var(--primary-color);">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Net Pending Qty</span>
+                                                        <button id="pending-filter-btn-net_pending_qty" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('net_pending_qty', event)" title="Filter by Net Pending Qty">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Status</span>
+                                                        <button id="pending-filter-btn-status" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('status', event)" title="Filter by Status">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="pending-plan-table-body">
+                                            <tr>
+                                                <td colspan="13"
+                                                    style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                                    No pending planning data available for the selected filters. Please
+                                                    click <strong>Recalculate & Refresh</strong>.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot id="pending-plan-table-foot"
+                                            style="position: sticky; bottom: 0; background: var(--bg-card); font-weight: bold; border-top: 2px solid var(--border-color);">
+                                            <tr>
+                                                <td colspan="7" style="text-align: right;">Totals:</td>
+                                                <td id="foot-pending-req" style="text-align: right;">0</td>
+                                                <td id="foot-pending-fg" style="text-align: right;">0</td>
+                                                <td id="foot-pending-wip" style="text-align: right;">0</td>
+                                                <td id="foot-pending-planned" style="text-align: right;">0</td>
+                                                <td id="foot-pending-net"
+                                                    style="text-align: right; color: var(--primary-color);">0</td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <div id="pending-plan-pagination"
+                                    style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border-color); font-size: 12px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TAB 2: CUTTING PLAN -->
+                        <div id="pending-subtab-view-cutting" class="pending-subtab-view hidden">
+                            <!-- Cutting Plan Dedicated Toolbar -->
+                            <div class="cutting-plan-toolbar"
+                                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--bg-card); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 14px;">
+                                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                    <button class="btn btn-primary" onclick="calculatePendingQtyPlan(true)"
+                                        title="Recalculate and refresh plan snapshot"
+                                        style="height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                                        <i class="fa-solid fa-arrows-rotate"></i> Recalculate & Refresh
+                                    </button>
+                                    <button id="cutting-confirm-btn" class="btn btn-success"
+                                        onclick="confirmPendingQtyPlan()" title="Confirm plan and freeze allocation"
+                                        style="height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-size: 12px; background: #10b981; color: #fff; border: none; border-radius: 6px;">
+                                        <i class="fa-solid fa-check-double"></i> Confirm Plan
+                                    </button>
+                                    <button class="btn btn-outline" onclick="exportCurrentPendingTabExcel()"
+                                        title="Export cutting plan to Excel"
+                                        style="height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                                        <i class="fa-solid fa-file-excel"></i> Export Excel
+                                    </button>
+                                </div>
+                                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                                    <label
+                                        style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-primary); cursor: pointer; user-select: none; background: rgba(255,255,255,0.04); padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+                                        <input type="checkbox" id="cutting-show-subtotal-toggle" checked
+                                            onchange="toggleCuttingPlanSubtotals(this.checked)"
+                                            style="accent-color: var(--primary-color); cursor: pointer;">
+                                        Show Sub Total
+                                    </label>
+                                    <div style="display: flex; gap: 6px;">
+                                        <button class="btn btn-sm btn-outline" onclick="expandAllCuttingPlanGroups()"
+                                            title="Expand all Fabric, Color, and Dia groups"
+                                            style="height: 30px; padding: 0 10px; font-size: 11.5px;">
+                                            <i class="fa-solid fa-angles-down"></i> Expand All
+                                        </button>
+                                        <button class="btn btn-sm btn-outline" onclick="collapseAllCuttingPlanGroups()"
+                                            title="Collapse all Fabric, Color, and Dia groups"
+                                            style="height: 30px; padding: 0 10px; font-size: 11.5px;">
+                                            <i class="fa-solid fa-angles-up"></i> Collapse All
+                                        </button>
+                                    </div>
+                                    <button id="cutting-clear-all-filters-btn" class="btn btn-sm btn-outline hidden"
+                                        onclick="clearAllCuttingPlanHeaderFilters()"
+                                        title="Clear all active column filters"
+                                        style="height: 30px; padding: 0 10px; font-size: 11.5px; color: #f59e0b; border-color: #f59e0b;">
+                                        <i class="fa-solid fa-filter-circle-xmark"></i> Clear Filters
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Excel Filter Popup Dropdown (Shared container positioned dynamically) -->
+                            <div id="cutting-plan-filter-popup" class="cutting-filter-popup hidden"
+                                style="position: fixed; z-index: 99999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 240px; padding: 12px; font-size: 12px;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span id="cutting-popup-col-title"
+                                        style="font-weight: 700; font-size: 12px; color: var(--text-primary);">Filter</span>
+                                    <button onclick="closeCuttingPlanFilterPopup()"
+                                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;"><i
+                                            class="fa-solid fa-xmark"></i></button>
+                                </div>
+                                <input type="text" id="cutting-popup-search" placeholder="Search..."
+                                    oninput="onCuttingFilterSearchInput(this.value)" class="form-input"
+                                    style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; margin-bottom: 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                <div
+                                    style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                                    <a href="javascript:void(0)" onclick="cuttingFilterSelectAll(true)"
+                                        style="color: var(--primary-color); text-decoration: none;">Select All</a>
+                                    <a href="javascript:void(0)" onclick="cuttingFilterSelectAll(false)"
+                                        style="color: var(--text-muted); text-decoration: none;">Clear All</a>
+                                </div>
+                                <div id="cutting-popup-checkbox-list"
+                                    style="max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,0.06); padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.15); margin-bottom: 10px;">
+                                    <!-- Dynamic Checkboxes -->
+                                </div>
+                                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                    <button class="btn btn-sm btn-outline" onclick="clearCuttingPlanFilterCurrent()"
+                                        style="padding: 3px 10px; font-size: 11px;">Clear</button>
+                                    <button class="btn btn-sm btn-primary" onclick="applyCuttingPlanFilterCurrent()"
+                                        style="padding: 3px 12px; font-size: 11px;">Apply</button>
+                                </div>
+                            </div>
+
+                            <!-- Cutting Plan Table Card -->
+                            <div class="card" style="padding: 0; overflow: hidden; border-radius: 8px;">
+                                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                                    <table class="table"
+                                        style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                                        <thead
+                                            style="position: sticky; top: 0; background: var(--bg-card); z-index: 10; border-bottom: 2px solid var(--border-color);">
+                                            <tr>
+                                                <th style="min-width: 140px; text-align: left; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Fabric</span>
+                                                        <button id="cutting-filter-btn-fabric"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('fabric', event)"
+                                                            title="Filter by Fabric">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: left; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Color</span>
+                                                        <button id="cutting-filter-btn-color"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('color', event)"
+                                                            title="Filter by Color">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th
+                                                    style="min-width: 70px; text-align: center; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Dia</span>
+                                                        <button id="cutting-filter-btn-dia"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('dia', event)"
+                                                            title="Filter by Dia">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 180px; text-align: left; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Product / Common Group</span>
+                                                        <button id="cutting-filter-btn-product"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('product', event)"
+                                                            title="Filter by Product / Group">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th
+                                                    style="min-width: 90px; text-align: center; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Type</span>
+                                                        <button id="cutting-filter-btn-type"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('type', event)"
+                                                            title="Filter by Type">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th
+                                                    style="text-align: right; min-width: 95px; color: var(--primary-color);">
+                                                    Net Pending Qty</th>
+                                                <th style="text-align: right; min-width: 85px;">Net Pending %</th>
+                                                <th style="text-align: right; min-width: 100px;">Balance Req Qty</th>
+                                                <th style="text-align: right; min-width: 95px;">Fabric Req (KG)</th>
+                                                <th style="text-align: right; min-width: 95px;">Available KG</th>
+                                                <th style="text-align: right; min-width: 90px; color: #10b981;">Cuttable
+                                                    Qty</th>
+                                                <th style="text-align: right; min-width: 80px; color: #f59e0b;">Hold Qty
+                                                </th>
+                                                <th style="text-align: right; min-width: 90px; color: #ef4444;">Shortage
+                                                    (KG)</th>
+                                                <th
+                                                    style="min-width: 95px; text-align: center; vertical-align: middle;">
+                                                    <div
+                                                        style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Cut Status</span>
+                                                        <button id="cutting-filter-btn-status"
+                                                            class="cutting-col-filter-btn"
+                                                            onclick="openCuttingPlanFilter('status', event)"
+                                                            title="Filter by Cut Status">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 80px; text-align: center;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="cutting-plan-table-body">
+                                            <tr>
+                                                <td colspan="15"
+                                                    style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                                    No cutting plan data available. Please select a plan and click
+                                                    <strong>Recalculate & Refresh</strong>.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot id="cutting-plan-table-foot"
+                                            style="position: sticky; bottom: 0; background: var(--bg-card); font-weight: bold; border-top: 2px solid var(--border-color); z-index: 5;">
+                                            <tr>
+                                                <td colspan="5" style="text-align: right;">Overall Totals:</td>
+                                                <td id="foot-cutting-pending"
+                                                    style="text-align: right; color: var(--primary-color);">0</td>
+                                                <td id="foot-cutting-pending-pct" style="text-align: right;">100.00%
+                                                </td>
+                                                <td id="foot-cutting-balance-req" style="text-align: right;">0</td>
+                                                <td id="foot-cutting-fab-req" style="text-align: right;">0.00</td>
+                                                <td id="foot-cutting-avail" style="text-align: right;">-</td>
+                                                <td id="foot-cutting-cuttable"
+                                                    style="text-align: right; color: #10b981;">0</td>
+                                                <td id="foot-cutting-hold" style="text-align: right; color: #f59e0b;">0
+                                                </td>
+                                                <td id="foot-cutting-shortage"
+                                                    style="text-align: right; color: #ef4444;">0.00</td>
+                                                <td colspan="2"></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <div id="cutting-plan-pagination"
+                                    style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border-color); font-size: 12px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TAB 3: FAB REQUIRED (FABRIC POOL VIEW) -->
+                        <div id="pending-subtab-view-fabric" class="pending-subtab-view hidden">
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+                                <button id="fab-required-clear-all-filters-btn" class="btn btn-sm btn-outline hidden"
+                                    onclick="clearAllFabRequiredFilters()"
+                                    title="Clear all active column filters"
+                                    style="height: 28px; padding: 0 10px; font-size: 11.5px; color: #f59e0b; border-color: #f59e0b;">
+                                    <i class="fa-solid fa-filter-circle-xmark"></i> Clear Filters
+                                </button>
+                            </div>
+
+                            <!-- Excel Filter Popup Dropdown for Tab 3 (Positioned dynamically) -->
+                            <div id="fab-required-filter-popup" class="pending-filter-popup hidden"
+                                style="position: fixed; z-index: 99999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 240px; padding: 12px; font-size: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span id="fab-required-popup-col-title" style="font-weight: 700; font-size: 12px; color: var(--text-primary);">Filter</span>
+                                    <button onclick="closeFabRequiredFilterPopup()"
+                                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+
+                                <!-- Categorical Section -->
+                                <div id="fab-required-popup-categorical-section">
+                                    <input type="text" id="fab-required-popup-search" placeholder="Search..."
+                                        oninput="onFabRequiredFilterSearchInput(this.value)" class="form-input"
+                                        style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; margin-bottom: 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                                        <a href="javascript:void(0)" onclick="fabRequiredFilterSelectAll(true)"
+                                            style="color: var(--primary-color); text-decoration: none;">Select All</a>
+                                        <a href="javascript:void(0)" onclick="fabRequiredFilterSelectAll(false)"
+                                            style="color: var(--text-muted); text-decoration: none;">Clear All</a>
+                                    </div>
+                                    <div id="fab-required-popup-checkbox-list"
+                                        style="max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,0.06); padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.15); margin-bottom: 10px;">
+                                    </div>
+                                </div>
+
+                                <!-- Numeric Section -->
+                                <div id="fab-required-popup-numeric-section" class="hidden">
+                                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Condition</label>
+                                    <select id="fab-required-popup-num-operator" class="form-select" onchange="onFabRequiredNumericOperatorChange(this.value)"
+                                        style="width: 100%; font-size: 11.5px; height: 30px; margin-bottom: 8px;">
+                                        <option value="eq">Equals (=)</option>
+                                        <option value="neq">Not Equal (!=)</option>
+                                        <option value="gt">Greater Than (&gt;)</option>
+                                        <option value="gte">Greater Than or Equal (&gt;=)</option>
+                                        <option value="lt">Less Than (&lt;)</option>
+                                        <option value="lte">Less Than or Equal (&lt;=)</option>
+                                        <option value="between">Between</option>
+                                    </select>
+                                    <div id="fab-required-popup-num-val1-wrap" style="margin-bottom: 8px;">
+                                        <input type="number" id="fab-required-popup-num-val1" class="form-input" placeholder="Value..." step="any"
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                    <div id="fab-required-popup-num-val2-wrap" class="hidden" style="margin-bottom: 8px;">
+                                        <input type="number" id="fab-required-popup-num-val2" class="form-input" placeholder="To value..." step="any"
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                    <button class="btn btn-sm btn-outline" onclick="clearFabRequiredFilterCurrent()"
+                                        style="padding: 3px 10px; font-size: 11px;">Clear</button>
+                                    <button class="btn btn-sm btn-primary" onclick="applyFabRequiredFilterCurrent()"
+                                        style="padding: 3px 12px; font-size: 11px;">Apply</button>
+                                </div>
+                            </div>
+
+                            <div class="card" style="padding: 0; overflow: hidden; border-radius: 8px;">
+                                <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
+                                    <table class="table"
+                                        style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                                        <thead
+                                            style="position: sticky; top: 0; background: var(--bg-card); z-index: 10; border-bottom: 2px solid var(--border-color);">
+                                            <tr>
+                                                <th style="width: 40px; text-align: center;"></th>
+                                                <th style="min-width: 140px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Fabric Name</span>
+                                                        <button id="fab-required-filter-btn-fabric_name" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('fabric_name', event)" title="Filter by Fabric Name">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 120px; text-align: left; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                                        <span>Fabric Color</span>
+                                                        <button id="fab-required-filter-btn-fabric_color" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('fabric_color', event)" title="Filter by Fabric Color">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 80px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Dia</span>
+                                                        <button id="fab-required-filter-btn-dia" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('dia', event)" title="Filter by Dia">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 80px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>GSM</span>
+                                                        <button id="fab-required-filter-btn-gsm" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('gsm', event)" title="Filter by GSM">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 120px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Consuming Styles</span>
+                                                        <button id="fab-required-filter-btn-consuming_products_count" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('consuming_products_count', event)" title="Filter by Consuming Styles">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Avail Stock (KG)</span>
+                                                        <button id="fab-required-filter-btn-available_stock_kg" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('available_stock_kg', event)" title="Filter by Avail Stock">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Total Req (KG)</span>
+                                                        <button id="fab-required-filter-btn-required_fabric_kg" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('required_fabric_kg', event)" title="Filter by Total Req">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Allocated (KG)</span>
+                                                        <button id="fab-required-filter-btn-allocated_fabric_kg" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('allocated_fabric_kg', event)" title="Filter by Allocated">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Remaining (KG)</span>
+                                                        <button id="fab-required-filter-btn-remaining_fabric_kg" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('remaining_fabric_kg', event)" title="Filter by Remaining">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 110px; text-align: right; vertical-align: middle; color: #ef4444;">
+                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                                                        <span>Shortage (KG)</span>
+                                                        <button id="fab-required-filter-btn-shortage_kg" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('shortage_kg', event)" title="Filter by Shortage">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 100px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Coverage %</span>
+                                                        <button id="fab-required-filter-btn-coverage_pct" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('coverage_pct', event)" title="Filter by Coverage %">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Status</span>
+                                                        <button id="fab-required-filter-btn-status" class="pending-col-filter-btn"
+                                                            onclick="openFabRequiredFilter('status', event)" title="Filter by Status">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
+                                                <th style="min-width: 90px; text-align: center; vertical-align: middle;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="fab-required-table-body">
+                                            <tr>
+                                                <td colspan="14"
+                                                    style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                                    No fabric pool data available. Please select a plan and click
+                                                    <strong>Recalculate & Refresh</strong>.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot id="fab-required-table-foot"
+                                            style="position: sticky; bottom: 0; background: var(--bg-card); font-weight: bold; border-top: 2px solid var(--border-color);">
+                                            <tr>
+                                                <td colspan="6" style="text-align: right;">Totals:</td>
+                                                <td id="foot-fabric-avail" style="text-align: right;">0.00</td>
+                                                <td id="foot-fabric-req" style="text-align: right;">0.00</td>
+                                                <td id="foot-fabric-alloc" style="text-align: right;">0.00</td>
+                                                <td></td>
+                                                <td id="foot-fabric-shortage"
+                                                    style="text-align: right; color: #ef4444;">0.00</td>
+                                                <td colspan="3"></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <div id="fab-required-pagination"
+                                    style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border-color); font-size: 12px;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- BALANCE REQUIRED QTY PANEL -->
                     <div id="balance-qty-panel" class="tab-panel hidden">
                         <div class="contribution-filter-bar" style="margin-bottom: 20px;">
@@ -1748,6 +2632,49 @@
                                     <input type="text" id="balance-qty-search" class="form-control"
                                         placeholder="Search..." oninput="loadBalanceQtyData(1)"
                                         style="width: 100%; height: 38px;">
+                                </div>
+                                <div style="position: relative;">
+                                    <label
+                                        style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Consider</label>
+                                    <div id="balance-qty-consider-btn" class="form-control"
+                                        onclick="toggleBalanceQtyConsiderDropdown(event)"
+                                        style="width: 100%; height: 38px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; padding: 0 10px; background: var(--input-bg, #1a1d2d); border: 1px solid var(--border-color); border-radius: 6px;">
+                                        <span id="balance-qty-consider-summary"
+                                            style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">All
+                                            Selected (3)</span>
+                                        <i class="fa-solid fa-chevron-down"
+                                            style="font-size: 11px; color: var(--text-secondary); margin-left: 6px;"></i>
+                                    </div>
+                                    <div id="balance-qty-consider-dropdown" class="hidden"
+                                        style="position: absolute; top: calc(100% + 4px); left: 0; min-width: 200px; z-index: 1000; background: var(--card-bg, #202433); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 8px; display: flex; flex-direction: column; gap: 4px;">
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary); transition: background 0.15s; margin: 0;"
+                                            onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+                                            onmouseout="this.style.background='transparent'">
+                                            <input type="checkbox" id="consider-fg-stock" checked
+                                                onchange="onBalanceQtyConsiderChange()"
+                                                style="cursor: pointer; accent-color: var(--accent-blue);">
+                                            <span>FG Stock</span>
+                                        </label>
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary); transition: background 0.15s; margin: 0;"
+                                            onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+                                            onmouseout="this.style.background='transparent'">
+                                            <input type="checkbox" id="consider-wip-qty" checked
+                                                onchange="onBalanceQtyConsiderChange()"
+                                                style="cursor: pointer; accent-color: var(--accent-blue);">
+                                            <span>WIP Qty</span>
+                                        </label>
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-primary); transition: background 0.15s; margin: 0;"
+                                            onmouseover="this.style.background='rgba(255,255,255,0.06)'"
+                                            onmouseout="this.style.background='transparent'">
+                                            <input type="checkbox" id="consider-pending-qty" checked
+                                                onchange="onBalanceQtyConsiderChange()"
+                                                style="cursor: pointer; accent-color: var(--accent-blue);">
+                                            <span>Pending Qty</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1943,21 +2870,29 @@
                                     saving</p>
                             </div>
                             <div class="period-selectors" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button class="btn btn-outline" onclick="downloadStockWipTemplate()" title="Download single-sheet template for active tab">
+                                <button class="btn btn-outline" onclick="downloadStockWipTemplate()"
+                                    title="Download single-sheet template for active tab">
                                     <i class="fa-solid fa-download"></i>
                                     <span>Download Template</span>
                                 </button>
-                                <button class="btn btn-outline" style="border-color: var(--accent-purple); color: var(--accent-purple);" onclick="downloadStockWipBulkTemplate()" title="Download clean 5-sheet workbook template">
+                                <button class="btn btn-outline"
+                                    style="border-color: var(--accent-purple); color: var(--accent-purple);"
+                                    onclick="downloadStockWipBulkTemplate()"
+                                    title="Download clean 5-sheet workbook template">
                                     <i class="fa-solid fa-file-excel"></i>
                                     <span>Bulk Feed Template</span>
                                 </button>
-                                <button class="btn btn-outline" onclick="triggerStockWipImport()" title="Import single sheet for active tab">
+                                <button class="btn btn-outline" onclick="triggerStockWipImport()"
+                                    title="Import single sheet for active tab">
                                     <i class="fa-solid fa-file-import"></i>
                                     <span>Import Excel</span>
                                 </button>
                                 <input type="file" id="stock-wip-import-file" class="hidden" accept=".xlsx, .xls"
                                     onchange="importStockWipExcel(event)">
-                                <button class="btn btn-outline" style="border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(59, 130, 246, 0.08);" onclick="openStockWipBulkFeedModal()" title="Load and validate all 5 sheets together">
+                                <button class="btn btn-outline"
+                                    style="border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(59, 130, 246, 0.08);"
+                                    onclick="openStockWipBulkFeedModal()"
+                                    title="Load and validate all 5 sheets together">
                                     <i class="fa-solid fa-layer-group"></i>
                                     <span>Bulk Feed</span>
                                 </button>
@@ -1981,11 +2916,15 @@
                                     <i class="fa-solid fa-circle-exclamation"></i>
                                     <span>Export Invalid</span>
                                 </button>
-                                <button class="btn btn-danger" style="background: rgba(220, 38, 38, 0.2); border: 1px solid var(--accent-red); color: #f87171; font-weight: 700;" onclick="openDeleteAllStockWipModal()" title="Delete all records across all 5 Stock/WIP tables">
+                                <button class="btn btn-danger"
+                                    style="background: rgba(220, 38, 38, 0.2); border: 1px solid var(--accent-red); color: #f87171; font-weight: 700;"
+                                    onclick="openDeleteAllStockWipModal()"
+                                    title="Delete all records across all 5 Stock/WIP tables">
                                     <i class="fa-solid fa-trash-can"></i>
                                     <span>Delete All</span>
                                 </button>
-                                <button class="btn btn-outline" style="color: var(--text-secondary);" onclick="clearStockWipPreview()">
+                                <button class="btn btn-outline" style="color: var(--text-secondary);"
+                                    onclick="clearStockWipPreview()">
                                     <i class="fa-solid fa-eraser"></i>
                                     <span>Clear</span>
                                 </button>
@@ -2063,7 +3002,7 @@
                         <!-- Main Grid Card -->
                         <div class="card"
                             style="position: relative; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card);">
-                            <!-- Grid Header with Search and Validation Filter -->
+                            <!-- Grid Header with Title, Mode Badge, and Clear Filters -->
                             <div class="card-header"
                                 style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; gap: 16px;">
                                 <div style="display: flex; align-items: center; gap: 12px;">
@@ -2075,23 +3014,68 @@
                                         Mode</span>
                                 </div>
                                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                                    <!-- Search Box -->
-                                    <div class="header-search-wrapper"
-                                        style="width: 250px; margin: 0; position: relative; display: flex; align-items: center;">
-                                        <i class="fa-solid fa-magnifying-glass search-icon"
-                                            style="position: absolute; left: 10px; color: var(--text-secondary); pointer-events: none;"></i>
-                                        <input type="text" id="stock-wip-search" placeholder="Search..."
-                                            oninput="onStockWipSearchFilter()"
-                                            style="padding-left: 32px; width: 100%; height: 36px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-sm); outline: none;">
+                                    <button id="stock-wip-clear-all-filters-btn" class="btn btn-sm btn-outline hidden"
+                                        onclick="clearAllStockWipFilters()"
+                                        title="Clear all active column filters"
+                                        style="height: 32px; padding: 0 12px; font-size: 11.5px; color: #f59e0b; border-color: #f59e0b;">
+                                        <i class="fa-solid fa-filter-circle-xmark"></i> Clear Filters
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Excel Filter Popup Dropdown for Stock / WIP (Positioned dynamically) -->
+                            <div id="stock-wip-filter-popup" class="pending-filter-popup hidden"
+                                style="position: fixed; z-index: 99999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 240px; padding: 12px; font-size: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span id="stock-wip-popup-col-title" style="font-weight: 700; font-size: 12px; color: var(--text-primary);">Filter</span>
+                                    <button onclick="closeStockWipFilterPopup()"
+                                        style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+
+                                <!-- Categorical Section -->
+                                <div id="stock-wip-popup-categorical-section">
+                                    <input type="text" id="stock-wip-popup-search" placeholder="Search..."
+                                        oninput="onStockWipFilterSearchInput(this.value)" class="form-input"
+                                        style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; margin-bottom: 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                                        <a href="javascript:void(0)" onclick="stockWipFilterSelectAll(true)"
+                                            style="color: var(--primary-color); text-decoration: none;">Select All</a>
+                                        <a href="javascript:void(0)" onclick="stockWipFilterSelectAll(false)"
+                                            style="color: var(--text-muted); text-decoration: none;">Clear All</a>
                                     </div>
-                                    <!-- Validation Status Filter -->
-                                    <select id="stock-wip-filter-status" onchange="onStockWipSearchFilter()"
-                                        class="modal-select"
-                                        style="width: 150px; height: 36px; margin: 0; padding: 6px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-sm); outline: none;">
-                                        <option value="">All Statuses</option>
-                                        <option value="VALID">Valid</option>
-                                        <option value="INVALID">Invalid</option>
+                                    <div id="stock-wip-popup-checkbox-list"
+                                        style="max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,0.06); padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.15); margin-bottom: 10px;">
+                                    </div>
+                                </div>
+
+                                <!-- Numeric Section -->
+                                <div id="stock-wip-popup-numeric-section" class="hidden">
+                                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Condition</label>
+                                    <select id="stock-wip-popup-num-operator" class="form-select" onchange="onStockWipNumericOperatorChange(this.value)"
+                                        style="width: 100%; font-size: 11.5px; height: 30px; margin-bottom: 8px;">
+                                        <option value="eq">Equals (=)</option>
+                                        <option value="neq">Not Equal (!=)</option>
+                                        <option value="gt">Greater Than (&gt;)</option>
+                                        <option value="gte">Greater Than or Equal (&gt;=)</option>
+                                        <option value="lt">Less Than (&lt;)</option>
+                                        <option value="lte">Less Than or Equal (&lt;=)</option>
+                                        <option value="between">Between</option>
                                     </select>
+                                    <div id="stock-wip-popup-num-val1-wrap" style="margin-bottom: 8px;">
+                                        <input type="number" id="stock-wip-popup-num-val1" class="form-input" placeholder="Value..." step="any"
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                    <div id="stock-wip-popup-num-val2-wrap" class="hidden" style="margin-bottom: 8px;">
+                                        <input type="number" id="stock-wip-popup-num-val2" class="form-input" placeholder="To value..." step="any"
+                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.2);">
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                    <button class="btn btn-sm btn-outline" onclick="clearStockWipFilterCurrent()"
+                                        style="padding: 3px 10px; font-size: 11px;">Clear</button>
+                                    <button class="btn btn-sm btn-primary" onclick="applyStockWipFilterCurrent()"
+                                        style="padding: 3px 12px; font-size: 11px;">Apply</button>
                                 </div>
                             </div>
 
@@ -3212,6 +4196,131 @@
                             <div id="common-production-master-loader" class="table-overlay">
                                 <div class="spinner spinner-sm"></div>
                                 <span>Loading common production records...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- LEAD DAYS MASTER PANEL -->
+                    <div id="lead-days-master-panel" class="tab-panel hidden">
+                        <div class="contribution-filter-bar">
+                            <div class="section-title">
+                                <h3><i class="fa-solid fa-clock-rotate-left"></i> Lead Days Master</h3>
+                                <p>Configure fabric and production lead days for future Base Stock planning</p>
+                            </div>
+                            <div class="period-selectors">
+                                <button class="btn btn-outline" onclick="exportLeadDaysExcel()">
+                                    <i class="fa-solid fa-file-export"></i>
+                                    <span>Export Excel</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Sub-tab Switching Controls -->
+                        <div class="planning-sub-tabs" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                            <button id="lead-days-subtab-fabric" class="btn btn-primary" onclick="switchLeadDaysSubTab('fabric')" style="padding: 8px 16px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                                <i class="fa-solid fa-scissors"></i> Fabric Lead Day Fixing
+                            </button>
+                            <button id="lead-days-subtab-production" class="btn btn-outline" onclick="switchLeadDaysSubTab('production')" style="padding: 8px 16px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                                <i class="fa-solid fa-industry"></i> Production Lead Day Fixing
+                            </button>
+                        </div>
+
+                        <!-- SUB-TAB 1: FABRIC LEAD DAY FIXING -->
+                        <div id="fabric-lead-days-section">
+                            <div class="filters-bar" style="margin-bottom: 20px; padding: 12px 20px; display: flex; gap: 16px; align-items: center; justify-content: flex-start; flex-wrap: wrap;">
+                                <div class="header-search-wrapper" style="width: 100%; max-width: 280px; margin: 0;">
+                                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                                    <input type="text" id="fabric-lead-days-search" placeholder="Search by fabric name, GSM, DIA, UOM..." oninput="handleFabricLeadDaysSearch()">
+                                </div>
+                                <div class="filter-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Status:</span>
+                                    <select id="fabric-lead-days-filter-status" onchange="handleFabricLeadDaysSearch()" class="modal-select" style="width: 130px; padding: 6px 12px; height: 36px; margin: 0;">
+                                        <option value="all">All Items</option>
+                                        <option value="set">Configured</option>
+                                        <option value="unset">Not Set</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-card">
+                                <div class="table-responsive">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align: left; min-width: 220px;">Fabric Name</th>
+                                                <th style="text-align: right; width: 100px;">GSM</th>
+                                                <th style="text-align: center; width: 150px;">DIA</th>
+                                                <th style="text-align: center; width: 100px;">UOM</th>
+                                                <th style="text-align: center; width: 140px;">Lead Days</th>
+                                                <th style="text-align: center; width: 180px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="fabric-lead-days-table-body">
+                                            <!-- Rendered dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="fabric-lead-days-empty" class="table-overlay hidden" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                                    <i class="fa-solid fa-scissors" style="font-size: 28px; margin-bottom: 10px; display: block; opacity: 0.5;"></i>
+                                    <span>No fabrics found matching the filters.</span>
+                                </div>
+                                <div id="fabric-lead-days-loader" class="table-overlay hidden">
+                                    <div class="spinner spinner-sm"></div>
+                                    <span>Loading fabric lead days...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SUB-TAB 2: PRODUCTION LEAD DAY FIXING -->
+                        <div id="production-lead-days-section" class="hidden">
+                            <div class="filters-bar" style="margin-bottom: 20px; padding: 12px 20px; display: flex; gap: 16px; align-items: center; justify-content: flex-start; flex-wrap: wrap;">
+                                <div class="header-search-wrapper" style="width: 100%; max-width: 280px; margin: 0;">
+                                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                                    <input type="text" id="production-lead-days-search" placeholder="Search by product, code, common name..." oninput="handleProductionLeadDaysSearch()">
+                                </div>
+                                <div class="filter-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Type:</span>
+                                    <select id="production-lead-days-filter-type" onchange="handleProductionLeadDaysSearch()" class="modal-select" style="width: 180px; padding: 6px 12px; height: 36px; margin: 0;">
+                                        <option value="all">All Types</option>
+                                        <option value="Stand Alone">Stand Alone</option>
+                                        <option value="Common Production">Common Production</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Status:</span>
+                                    <select id="production-lead-days-filter-status" onchange="handleProductionLeadDaysSearch()" class="modal-select" style="width: 130px; padding: 6px 12px; height: 36px; margin: 0;">
+                                        <option value="all">All Items</option>
+                                        <option value="set">Configured</option>
+                                        <option value="unset">Not Set</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="table-card">
+                                <div class="table-responsive">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align: center; width: 160px;">Type</th>
+                                                <th style="text-align: left; min-width: 240px;">Product / Common Production</th>
+                                                <th style="text-align: left; min-width: 180px;">Code / Member Count</th>
+                                                <th style="text-align: center; width: 140px;">Lead Days</th>
+                                                <th style="text-align: center; width: 180px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="production-lead-days-table-body">
+                                            <!-- Rendered dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="production-lead-days-empty" class="table-overlay hidden" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                                    <i class="fa-solid fa-industry" style="font-size: 28px; margin-bottom: 10px; display: block; opacity: 0.5;"></i>
+                                    <span>No production records found matching the filters.</span>
+                                </div>
+                                <div id="production-lead-days-loader" class="table-overlay hidden">
+                                    <div class="spinner spinner-sm"></div>
+                                    <span>Loading production lead days...</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -4529,45 +5638,123 @@
         </div>
     </div>
 
-    
-    <!-- DELETE ALL STOCK & WIP CONFIRMATION MODAL -->
-    <div id="modal-stock-wip-delete-all" class="modal-overlay hidden" style="z-index: 2500; backdrop-filter: blur(6px);">
-        <div class="modal-card" style="width: 520px; max-width: 95vw; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.4); box-shadow: 0 16px 40px rgba(0,0,0,0.6); border-radius: var(--radius-md); overflow: hidden;">
-            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color); background: rgba(239, 68, 68, 0.08);">
+
+    <!-- DELETE STOCK & WIP CONFIRMATION MODAL -->
+    <div id="modal-stock-wip-delete-all" class="modal-overlay hidden"
+        style="z-index: 2500; backdrop-filter: blur(6px);">
+        <div class="modal-card"
+            style="width: 520px; max-width: 95vw; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.4); box-shadow: 0 16px 40px rgba(0,0,0,0.6); border-radius: var(--radius-md); overflow: hidden;">
+            <div class="modal-header"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color); background: rgba(239, 68, 68, 0.08);">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); display: flex; align-items: center; justify-content: center; color: var(--accent-red);">
+                    <div
+                        style="width: 36px; height: 36px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); display: flex; align-items: center; justify-content: center; color: var(--accent-red);">
                         <i class="fa-solid fa-triangle-exclamation" style="font-size: 18px;"></i>
                     </div>
-                    <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary);">Delete All Stock & WIP Data?</h3>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary);">Delete Stock &
+                        WIP Data?</h3>
                 </div>
-                <button class="modal-close-btn" onclick="closeDeleteAllStockWipModal()" style="font-size: 24px; background: none; border: none; color: var(--text-muted); cursor: pointer;">&times;</button>
+                <button class="modal-close-btn" onclick="closeDeleteAllStockWipModal()"
+                    style="font-size: 24px; background: none; border: none; color: var(--text-muted); cursor: pointer;">&times;</button>
             </div>
             <div class="modal-body" style="padding: 20px;">
                 <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;">
-                    This will permanently delete all records from <strong>Fabric Stock, Fabric WIP, Production WIP, Pending Orders</strong>, and <strong>Finished Goods</strong>. <span style="color: var(--accent-green); font-weight: 600;">Master data will not be affected.</span>
+                    Select the tables to permanently delete records from. <span
+                        style="color: var(--accent-green); font-weight: 600;">Master data will not be affected.</span>
                 </p>
-                <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 16px;">
-                    <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 0.5px;">Summary of Records to Delete:</div>
+                <div
+                    style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 16px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span
+                            style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Select
+                            Tables to Delete:</span>
+                        <label
+                            style="font-size: 12px; color: var(--accent-blue); cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;">
+                            <input type="checkbox" id="delete-all-select-all" checked
+                                onchange="toggleDeleteAllStockWipCheckboxes(this.checked)" style="cursor: pointer;">
+                            Select All
+                        </label>
+                    </div>
                     <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                        <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-secondary);">Fabric Stock:</span> <strong id="delete-all-cnt-fabric-stock" style="color: var(--text-primary);">0</strong></div>
-                        <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-secondary);">Fabric WIP:</span> <strong id="delete-all-cnt-fabric-wip" style="color: var(--text-primary);">0</strong></div>
-                        <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-secondary);">Production WIP:</span> <strong id="delete-all-cnt-production-wip" style="color: var(--text-primary);">0</strong></div>
-                        <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-secondary);">Pending Orders:</span> <strong id="delete-all-cnt-pending-orders" style="color: var(--text-primary);">0</strong></div>
-                        <div style="display: flex; justify-content: space-between;"><span style="color: var(--text-secondary);">Finished Goods:</span> <strong id="delete-all-cnt-finished-goods" style="color: var(--text-primary);">0</strong></div>
-                        <div style="border-top: 1px solid var(--border-color); padding-top: 8px; margin-top: 4px; display: flex; justify-content: space-between; font-weight: 700; font-size: 14px;">
-                            <span style="color: var(--accent-red);">Total Records to Delete:</span>
+                        <label
+                            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: background 0.15s;"
+                            onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                            onmouseout="this.style.background='transparent'">
+                            <span style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
+                                <input type="checkbox" class="delete-stock-wip-cb" value="fabric-stock" checked
+                                    onchange="updateDeleteSelectedSummary()"
+                                    style="cursor: pointer; accent-color: var(--accent-red);">
+                                <span>Fabric Stock:</span>
+                            </span>
+                            <strong id="delete-all-cnt-fabric-stock" style="color: var(--text-primary);">0</strong>
+                        </label>
+                        <label
+                            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: background 0.15s;"
+                            onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                            onmouseout="this.style.background='transparent'">
+                            <span style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
+                                <input type="checkbox" class="delete-stock-wip-cb" value="fabric-wip" checked
+                                    onchange="updateDeleteSelectedSummary()"
+                                    style="cursor: pointer; accent-color: var(--accent-red);">
+                                <span>Fabric WIP:</span>
+                            </span>
+                            <strong id="delete-all-cnt-fabric-wip" style="color: var(--text-primary);">0</strong>
+                        </label>
+                        <label
+                            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: background 0.15s;"
+                            onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                            onmouseout="this.style.background='transparent'">
+                            <span style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
+                                <input type="checkbox" class="delete-stock-wip-cb" value="production-wip" checked
+                                    onchange="updateDeleteSelectedSummary()"
+                                    style="cursor: pointer; accent-color: var(--accent-red);">
+                                <span>Production WIP:</span>
+                            </span>
+                            <strong id="delete-all-cnt-production-wip" style="color: var(--text-primary);">0</strong>
+                        </label>
+                        <label
+                            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: background 0.15s;"
+                            onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                            onmouseout="this.style.background='transparent'">
+                            <span style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
+                                <input type="checkbox" class="delete-stock-wip-cb" value="pending-orders" checked
+                                    onchange="updateDeleteSelectedSummary()"
+                                    style="cursor: pointer; accent-color: var(--accent-red);">
+                                <span>Pending Orders:</span>
+                            </span>
+                            <strong id="delete-all-cnt-pending-orders" style="color: var(--text-primary);">0</strong>
+                        </label>
+                        <label
+                            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: background 0.15s;"
+                            onmouseover="this.style.background='rgba(255,255,255,0.03)'"
+                            onmouseout="this.style.background='transparent'">
+                            <span style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
+                                <input type="checkbox" class="delete-stock-wip-cb" value="finished-goods" checked
+                                    onchange="updateDeleteSelectedSummary()"
+                                    style="cursor: pointer; accent-color: var(--accent-red);">
+                                <span>Finished Goods:</span>
+                            </span>
+                            <strong id="delete-all-cnt-finished-goods" style="color: var(--text-primary);">0</strong>
+                        </label>
+                        <div
+                            style="border-top: 1px solid var(--border-color); padding-top: 8px; margin-top: 4px; display: flex; justify-content: space-between; font-weight: 700; font-size: 14px;">
+                            <span style="color: var(--accent-red);">Selected Records to Delete:</span>
                             <span id="delete-all-cnt-total" style="color: var(--accent-red); font-size: 16px;">0</span>
                         </div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);">
-                    <i class="fa-solid fa-shield-halved" style="color: var(--accent-blue);"></i> Transaction-safe: Either all 5 tables delete successfully or changes roll back.
+                    <i class="fa-solid fa-shield-halved" style="color: var(--accent-blue);"></i> Transaction-safe:
+                    Selected table(s) delete cleanly or changes roll back.
                 </div>
             </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+            <div class="modal-footer"
+                style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
                 <button class="btn btn-outline" onclick="closeDeleteAllStockWipModal()">Cancel</button>
-                <button id="btn-confirm-delete-all-stock-wip" class="btn btn-danger" style="background: var(--accent-red); font-weight: 700;" onclick="confirmDeleteAllStockWip()">
-                    <i class="fa-solid fa-trash-can"></i> Delete All Records
+                <button id="btn-confirm-delete-all-stock-wip" class="btn btn-danger"
+                    style="background: var(--accent-red); font-weight: 700;" onclick="confirmDeleteAllStockWip()">
+                    <i class="fa-solid fa-trash-can"></i> Delete Selected Records
                 </button>
             </div>
         </div>
@@ -4575,69 +5762,97 @@
 
     <!-- BULK FEED (5-SHEET EXCEL) MODAL -->
     <div id="modal-stock-wip-bulk-feed" class="modal-overlay hidden" style="z-index: 2200; backdrop-filter: blur(6px);">
-        <div class="modal-card modal-lg" style="width: 95vw; max-width: 1480px; height: 90vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 16px 48px rgba(0,0,0,0.6); border-radius: var(--radius-md);">
+        <div class="modal-card modal-lg"
+            style="width: 95vw; max-width: 1480px; height: 90vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 16px 48px rgba(0,0,0,0.6); border-radius: var(--radius-md);">
             <!-- Modal Header -->
-            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.02);">
+            <div class="modal-header"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.02);">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="width: 38px; height: 38px; border-radius: var(--radius-sm); background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-blue);">
+                    <div
+                        style="width: 38px; height: 38px; border-radius: var(--radius-sm); background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-blue);">
                         <i class="fa-solid fa-layer-group" style="font-size: 18px;"></i>
                     </div>
                     <div>
-                        <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                        <h3
+                            style="margin: 0; font-size: 17px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
                             Bulk Feed — Stock / WIP / Pending Order
                         </h3>
                         <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-                            Workflow: <span style="color: var(--accent-blue);">1. Upload & Load</span> → <span style="color: var(--accent-purple);">2. Review</span> → <span style="color: var(--accent-orange);">3. Validate</span> → <span style="color: var(--accent-red);">4. Filter & Edit Invalid</span> → <span style="color: var(--accent-green);">5. Re-Validate</span> → <span style="color: var(--accent-green); font-weight: 700;">6. Save</span>
+                            Workflow: <span style="color: var(--accent-blue);">1. Upload & Load</span> → <span
+                                style="color: var(--accent-purple);">2. Review</span> → <span
+                                style="color: var(--accent-orange);">3. Validate</span> → <span
+                                style="color: var(--accent-red);">4. Filter & Edit Invalid</span> → <span
+                                style="color: var(--accent-green);">5. Re-Validate</span> → <span
+                                style="color: var(--accent-green); font-weight: 700;">6. Save</span>
                         </div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <button class="btn btn-outline btn-sm" onclick="downloadStockWipBulkTemplate()" style="font-size: 12px; padding: 6px 12px;">
+                    <button class="btn btn-outline btn-sm" onclick="downloadStockWipBulkTemplate()"
+                        style="font-size: 12px; padding: 6px 12px;">
                         <i class="fa-solid fa-download"></i> Template (.xlsx)
                     </button>
-                    <button class="modal-close-btn" onclick="closeStockWipBulkFeedModal()" style="font-size: 24px; background: none; border: none; color: var(--text-muted); cursor: pointer;">&times;</button>
+                    <button class="modal-close-btn" onclick="closeStockWipBulkFeedModal()"
+                        style="font-size: 24px; background: none; border: none; color: var(--text-muted); cursor: pointer;">&times;</button>
                 </div>
             </div>
 
             <!-- Modal Body -->
-            <div class="modal-body" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 18px 24px; background: rgba(0, 0, 0, 0.1);">
-                
+            <div class="modal-body"
+                style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 18px 24px; background: rgba(0, 0, 0, 0.1);">
+
                 <!-- 1. Dropzone Upload State (Visible when no file is loaded) -->
-                <div id="bulk-feed-upload-view" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: var(--radius-md); background: rgba(0,0,0,0.15); padding: 40px; text-align: center;">
-                    <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(59, 130, 246, 0.1); display: flex; align-items: center; justify-content: center; color: var(--accent-blue); margin-bottom: 20px;">
+                <div id="bulk-feed-upload-view"
+                    style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 2px dashed var(--border-color); border-radius: var(--radius-md); background: rgba(0,0,0,0.15); padding: 40px; text-align: center;">
+                    <div
+                        style="width: 72px; height: 72px; border-radius: 50%; background: rgba(59, 130, 246, 0.1); display: flex; align-items: center; justify-content: center; color: var(--accent-blue); margin-bottom: 20px;">
                         <i class="fa-solid fa-file-excel" style="font-size: 36px;"></i>
                     </div>
-                    <h4 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Upload 5-Sheet Excel Workbook</h4>
-                    <p style="font-size: 13.5px; color: var(--text-secondary); max-width: 540px; line-height: 1.5; margin-bottom: 20px;">
-                        Upload an Excel file containing all 5 sheets: <strong>Fabric Stock, Fabric WIP, Production WIP, Pending Orders</strong>, and <strong>Finished Goods</strong>.
-                        Records will be loaded into the preview grid with status <span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-weight: 600;">NOT VALIDATED</span>.
+                    <h4 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">
+                        Upload 5-Sheet Excel Workbook</h4>
+                    <p
+                        style="font-size: 13.5px; color: var(--text-secondary); max-width: 540px; line-height: 1.5; margin-bottom: 20px;">
+                        Upload an Excel file containing all 5 sheets: <strong>Fabric Stock, Fabric WIP, Production WIP,
+                            Pending Orders</strong>, and <strong>Finished Goods</strong>.
+                        Records will be loaded into the preview grid with status <span
+                            style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-weight: 600;">NOT
+                            VALIDATED</span>.
                     </p>
-                    <input type="file" id="bulk-feed-file-input" class="hidden" accept=".xlsx, .xls" onchange="handleBulkFeedFileSelect(event)">
+                    <input type="file" id="bulk-feed-file-input" class="hidden" accept=".xlsx, .xls"
+                        onchange="handleBulkFeedFileSelect(event)">
                     <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
-                        <button class="btn btn-primary" onclick="document.getElementById('bulk-feed-file-input').click()" style="padding: 10px 24px; font-size: 14px; font-weight: 600;">
+                        <button class="btn btn-primary"
+                            onclick="document.getElementById('bulk-feed-file-input').click()"
+                            style="padding: 10px 24px; font-size: 14px; font-weight: 600;">
                             <i class="fa-solid fa-folder-open"></i> Browse Excel File
                         </button>
-                        <button class="btn btn-outline" onclick="downloadStockWipBulkTemplate()" style="padding: 10px 20px; font-size: 14px;">
+                        <button class="btn btn-outline" onclick="downloadStockWipBulkTemplate()"
+                            style="padding: 10px 20px; font-size: 14px;">
                             <i class="fa-solid fa-download"></i> Download Clean Template
                         </button>
                     </div>
                 </div>
 
                 <!-- 2. Loaded Grid & Correction View (Visible when file is loaded) -->
-                <div id="bulk-feed-grid-view" class="hidden" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                    
+                <div id="bulk-feed-grid-view" class="hidden"
+                    style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+
                     <!-- File Info & Action Top Bar -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <span class="table-badge badge-outline" style="border-color: var(--accent-blue); color: var(--accent-blue); font-size: 12.5px; padding: 4px 10px;">
+                            <span class="table-badge badge-outline"
+                                style="border-color: var(--accent-blue); color: var(--accent-blue); font-size: 12.5px; padding: 4px 10px;">
                                 <i class="fa-solid fa-file-excel"></i> <span id="bulk-feed-filename">file.xlsx</span>
                             </span>
-                            <span id="bulk-feed-load-status-badge" class="table-badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary); font-size: 12px;">
+                            <span id="bulk-feed-load-status-badge" class="table-badge"
+                                style="background: rgba(255,255,255,0.06); color: var(--text-secondary); font-size: 12px;">
                                 Loaded: <strong id="bulk-feed-total-loaded-badge">0</strong> records
                             </span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <button class="btn btn-outline btn-sm" onclick="triggerBulkFeedReupload()" style="font-size: 12px; padding: 4px 10px;">
+                            <button class="btn btn-outline btn-sm" onclick="triggerBulkFeedReupload()"
+                                style="font-size: 12px; padding: 4px 10px;">
                                 <i class="fa-solid fa-arrow-up-from-bracket"></i> Change File
                             </button>
                         </div>
@@ -4646,7 +5861,8 @@
                     <!-- Summary KPI Cards -->
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;">
                         <div class="kpi-card" style="padding: 10px 16px; margin: 0; background: rgba(0,0,0,0.25);">
-                            <div class="kpi-icon" style="width: 36px; height: 36px; font-size: 14px; background: rgba(99, 102, 241, 0.15); color: var(--accent-purple);">
+                            <div class="kpi-icon"
+                                style="width: 36px; height: 36px; font-size: 14px; background: rgba(99, 102, 241, 0.15); color: var(--accent-purple);">
                                 <i class="fa-solid fa-list-ol"></i>
                             </div>
                             <div class="kpi-info">
@@ -4655,59 +5871,84 @@
                             </div>
                         </div>
                         <div class="kpi-card" style="padding: 10px 16px; margin: 0; background: rgba(0,0,0,0.25);">
-                            <div class="kpi-icon" style="width: 36px; height: 36px; font-size: 14px; background: rgba(34, 197, 94, 0.15); color: var(--accent-green);">
+                            <div class="kpi-icon"
+                                style="width: 36px; height: 36px; font-size: 14px; background: rgba(34, 197, 94, 0.15); color: var(--accent-green);">
                                 <i class="fa-solid fa-circle-check"></i>
                             </div>
                             <div class="kpi-info">
                                 <span class="kpi-title" style="font-size: 11px;">VALID ROWS</span>
-                                <h3 id="bulk-feed-kpi-valid" style="font-size: 20px; margin: 0; color: var(--accent-green);">0</h3>
+                                <h3 id="bulk-feed-kpi-valid"
+                                    style="font-size: 20px; margin: 0; color: var(--accent-green);">0</h3>
                             </div>
                         </div>
                         <div class="kpi-card" style="padding: 10px 16px; margin: 0; background: rgba(0,0,0,0.25);">
-                            <div class="kpi-icon" style="width: 36px; height: 36px; font-size: 14px; background: rgba(239, 68, 68, 0.15); color: var(--accent-red);">
+                            <div class="kpi-icon"
+                                style="width: 36px; height: 36px; font-size: 14px; background: rgba(239, 68, 68, 0.15); color: var(--accent-red);">
                                 <i class="fa-solid fa-circle-xmark"></i>
                             </div>
                             <div class="kpi-info">
                                 <span class="kpi-title" style="font-size: 11px;">INVALID ROWS</span>
-                                <h3 id="bulk-feed-kpi-invalid" style="font-size: 20px; margin: 0; color: var(--accent-red);">0</h3>
+                                <h3 id="bulk-feed-kpi-invalid"
+                                    style="font-size: 20px; margin: 0; color: var(--accent-red);">0</h3>
                             </div>
                         </div>
                         <div class="kpi-card" style="padding: 10px 16px; margin: 0; background: rgba(0,0,0,0.25);">
-                            <div class="kpi-icon" style="width: 36px; height: 36px; font-size: 14px; background: rgba(245, 158, 11, 0.15); color: var(--accent-orange);">
+                            <div class="kpi-icon"
+                                style="width: 36px; height: 36px; font-size: 14px; background: rgba(245, 158, 11, 0.15); color: var(--accent-orange);">
                                 <i class="fa-solid fa-copy"></i>
                             </div>
                             <div class="kpi-info">
                                 <span class="kpi-title" style="font-size: 11px;">DUPLICATE ROWS</span>
-                                <h3 id="bulk-feed-kpi-duplicate" style="font-size: 20px; margin: 0; color: var(--accent-orange);">0</h3>
+                                <h3 id="bulk-feed-kpi-duplicate"
+                                    style="font-size: 20px; margin: 0; color: var(--accent-orange);">0</h3>
                             </div>
                         </div>
                     </div>
 
                     <!-- Category Sheet Sub-Tabs -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; flex-wrap: wrap; gap: 10px;">
-                        <div class="planning-tabs" style="display: flex; gap: 6px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                            <button id="bulk-tab-fabric-stock" class="tab-btn active" onclick="switchBulkFeedSheet('Fabric Stock')" style="padding: 6px 14px; font-size: 12.5px;">
-                                Fabric Stock <span id="badge-count-fabric-stock" class="table-badge badge-outline" style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+                        <div class="planning-tabs"
+                            style="display: flex; gap: 6px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <button id="bulk-tab-fabric-stock" class="tab-btn active"
+                                onclick="switchBulkFeedSheet('Fabric Stock')"
+                                style="padding: 6px 14px; font-size: 12.5px;">
+                                Fabric Stock <span id="badge-count-fabric-stock" class="table-badge badge-outline"
+                                    style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
                             </button>
-                            <button id="bulk-tab-fabric-wip" class="tab-btn" onclick="switchBulkFeedSheet('Fabric WIP')" style="padding: 6px 14px; font-size: 12.5px;">
-                                Fabric WIP <span id="badge-count-fabric-wip" class="table-badge badge-outline" style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
+                            <button id="bulk-tab-fabric-wip" class="tab-btn" onclick="switchBulkFeedSheet('Fabric WIP')"
+                                style="padding: 6px 14px; font-size: 12.5px;">
+                                Fabric WIP <span id="badge-count-fabric-wip" class="table-badge badge-outline"
+                                    style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
                             </button>
-                            <button id="bulk-tab-production-wip" class="tab-btn" onclick="switchBulkFeedSheet('Production WIP')" style="padding: 6px 14px; font-size: 12.5px;">
-                                Production WIP <span id="badge-count-production-wip" class="table-badge badge-outline" style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
+                            <button id="bulk-tab-production-wip" class="tab-btn"
+                                onclick="switchBulkFeedSheet('Production WIP')"
+                                style="padding: 6px 14px; font-size: 12.5px;">
+                                Production WIP <span id="badge-count-production-wip" class="table-badge badge-outline"
+                                    style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
                             </button>
-                            <button id="bulk-tab-pending-orders" class="tab-btn" onclick="switchBulkFeedSheet('Pending Orders')" style="padding: 6px 14px; font-size: 12.5px;">
-                                Pending Orders <span id="badge-count-pending-orders" class="table-badge badge-outline" style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
+                            <button id="bulk-tab-pending-orders" class="tab-btn"
+                                onclick="switchBulkFeedSheet('Pending Orders')"
+                                style="padding: 6px 14px; font-size: 12.5px;">
+                                Pending Orders <span id="badge-count-pending-orders" class="table-badge badge-outline"
+                                    style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
                             </button>
-                            <button id="bulk-tab-finished-goods" class="tab-btn" onclick="switchBulkFeedSheet('Finished Goods')" style="padding: 6px 14px; font-size: 12.5px;">
-                                Finished Goods <span id="badge-count-finished-goods" class="table-badge badge-outline" style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
+                            <button id="bulk-tab-finished-goods" class="tab-btn"
+                                onclick="switchBulkFeedSheet('Finished Goods')"
+                                style="padding: 6px 14px; font-size: 12.5px;">
+                                Finished Goods <span id="badge-count-finished-goods" class="table-badge badge-outline"
+                                    style="margin-left: 6px; font-size: 10.5px; padding: 1px 6px;">0</span>
                             </button>
                         </div>
 
                         <!-- Filter & Search Controls -->
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <div class="header-search-wrapper" style="width: 220px; margin: 0; position: relative; display: flex; align-items: center;">
-                                <i class="fa-solid fa-magnifying-glass search-icon" style="position: absolute; left: 10px; color: var(--text-secondary); pointer-events: none; font-size: 12px;"></i>
-                                <input type="text" id="bulk-feed-search" placeholder="Search sheet..." oninput="onBulkFeedSearchFilter()"
+                            <div class="header-search-wrapper"
+                                style="width: 220px; margin: 0; position: relative; display: flex; align-items: center;">
+                                <i class="fa-solid fa-magnifying-glass search-icon"
+                                    style="position: absolute; left: 10px; color: var(--text-secondary); pointer-events: none; font-size: 12px;"></i>
+                                <input type="text" id="bulk-feed-search" placeholder="Search sheet..."
+                                    oninput="onBulkFeedSearchFilter()"
                                     style="padding-left: 30px; width: 100%; height: 32px; font-size: 12.5px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-sm); outline: none;">
                             </div>
                             <select id="bulk-feed-filter-status" onchange="onBulkFeedSearchFilter()"
@@ -4724,9 +5965,12 @@
                     </div>
 
                     <!-- Spreadsheet Table -->
-                    <div style="flex: 1; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); position: relative; min-height: 200px;">
-                        <table class="spreadsheet-table" id="bulk-feed-table" style="width: 100%; border-collapse: collapse;">
-                            <thead id="bulk-feed-thead" style="position: sticky; top: 0; z-index: 10; background: var(--bg-card); box-shadow: inset 0 -1px 0 var(--border-color);">
+                    <div
+                        style="flex: 1; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card); position: relative; min-height: 200px;">
+                        <table class="spreadsheet-table" id="bulk-feed-table"
+                            style="width: 100%; border-collapse: collapse;">
+                            <thead id="bulk-feed-thead"
+                                style="position: sticky; top: 0; z-index: 10; background: var(--bg-card); box-shadow: inset 0 -1px 0 var(--border-color);">
                             </thead>
                             <tbody id="bulk-feed-tbody">
                             </tbody>
@@ -4734,37 +5978,46 @@
                     </div>
 
                     <!-- Grid Footer with Pagination -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-top: 8px; font-size: 12.5px; color: var(--text-secondary);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-top: 8px; font-size: 12.5px; color: var(--text-secondary);">
                         <div>
-                            Showing <span id="bulk-feed-page-start">0</span> to <span id="bulk-feed-page-end">0</span> of <span id="bulk-feed-page-total">0</span> sheet records
+                            Showing <span id="bulk-feed-page-start">0</span> to <span id="bulk-feed-page-end">0</span>
+                            of <span id="bulk-feed-page-total">0</span> sheet records
                         </div>
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <span>Per page:</span>
-                                <select id="bulk-feed-page-size" onchange="onBulkFeedPageSizeChange()" style="padding: 2px 6px; font-size: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-primary); outline: none;">
+                                <select id="bulk-feed-page-size" onchange="onBulkFeedPageSizeChange()"
+                                    style="padding: 2px 6px; font-size: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-primary); outline: none;">
                                     <option value="10">10</option>
                                     <option value="25" selected>25</option>
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                 </select>
                             </div>
-                            <div id="bulk-feed-pagination" class="pagination-buttons" style="display: flex; gap: 4px;"></div>
+                            <div id="bulk-feed-pagination" class="pagination-buttons" style="display: flex; gap: 4px;">
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Modal Footer Controls -->
-            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
-                <div id="bulk-feed-footer-status" style="font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
-                    <i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i> <span>Upload an Excel workbook to preview all sheets before validating.</span>
+            <div class="modal-footer"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
+                <div id="bulk-feed-footer-status"
+                    style="font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i> <span>Upload an Excel
+                        workbook to preview all sheets before validating.</span>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <button class="btn btn-outline" onclick="closeStockWipBulkFeedModal()">Close</button>
-                    <button id="btn-bulk-feed-validate" class="btn btn-primary" onclick="validateBulkFeedGridData()" disabled style="font-weight: 600;">
+                    <button id="btn-bulk-feed-validate" class="btn btn-primary" onclick="validateBulkFeedGridData()"
+                        disabled style="font-weight: 600;">
                         <i class="fa-solid fa-check-double"></i> <span>Validate</span>
                     </button>
-                    <button id="btn-bulk-feed-save" class="btn btn-success" onclick="saveBulkFeedGridData()" disabled style="font-weight: 700;">
+                    <button id="btn-bulk-feed-save" class="btn btn-success" onclick="saveBulkFeedGridData()" disabled
+                        style="font-weight: 700;">
                         <i class="fa-solid fa-floppy-disk"></i> <span>Save Bulk Feed</span>
                     </button>
                 </div>
@@ -4772,12 +6025,152 @@
         </div>
     </div>
 
-<div id="toast-container"
+    <!-- PENDING QTY PLANNING PRIORITY MODAL -->
+    <div id="pending-priority-modal" class="modal-overlay hidden" style="z-index: 2100; backdrop-filter: blur(4px);">
+        <div class="modal-card"
+            style="width: 420px; max-width: 90vw; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="modal-header"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color);">
+                <h3 style="font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;"><i
+                        class="fa-solid fa-arrow-up-1-9"></i> Set Cutting Priority</h3>
+                <button class="modal-close-btn" onclick="closePendingPriorityModal()"
+                    style="font-size: 20px; background: none; border: none; color: var(--text-secondary); cursor: pointer;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <input type="hidden" id="modal-priority-line-id">
+                <div style="margin-bottom: 12px;">
+                    <div id="modal-priority-sku-title"
+                        style="font-size: 13.5px; font-weight: 600; color: var(--text-primary);"></div>
+                    <div id="modal-priority-sku-sub"
+                        style="font-size: 12px; color: var(--text-muted); margin-top: 2px;"></div>
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                    <label
+                        style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Priority
+                        (Lower number = Higher Priority)</label>
+                    <input type="number" id="modal-priority-input" class="form-input" min="1" max="999"
+                        style="width: 100%; font-size: 13px; height: 36px;" placeholder="e.g. 1, 2, 3...">
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 8px;">
+                    <i class="fa-solid fa-circle-info"></i> Updating priority will immediately recalculate fabric
+                    allocations for this fabric pool.
+                </div>
+            </div>
+            <div class="modal-footer"
+                style="display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border-color);">
+                <button class="btn btn-outline" onclick="closePendingPriorityModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="savePendingLinePriority()">Save & Recalculate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PENDING QTY PLANNING MANUAL FABRIC ALLOCATION MODAL -->
+    <div id="pending-manual-allocation-modal" class="modal-overlay hidden"
+        style="z-index: 2200; backdrop-filter: blur(4px);">
+        <div class="modal-card modal-lg"
+            style="width: 90vw; max-width: 1100px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="modal-header"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color);">
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;"><i
+                            class="fa-solid fa-sliders"></i> Manual Fabric Allocation</h3>
+                    <div id="modal-alloc-pool-title"
+                        style="font-size: 12px; color: var(--text-muted); margin-top: 2px;"></div>
+                </div>
+                <button class="modal-close-btn" onclick="closePendingManualAllocModal()"
+                    style="font-size: 20px; background: none; border: none; color: var(--text-secondary); cursor: pointer;">&times;</button>
+            </div>
+            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 16px 20px;">
+                <!-- Stock vs Allocation Meter -->
+                <div
+                    style="display: flex; gap: 16px; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 6px; margin-bottom: 14px;">
+                    <div>
+                        <div
+                            style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">
+                            Available Stock</div>
+                        <div id="modal-alloc-avail-stock" style="font-size: 18px; font-weight: 700; color: #10b981;">
+                            0.00 KG</div>
+                    </div>
+                    <div>
+                        <div
+                            style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">
+                            Total Allocated</div>
+                        <div id="modal-alloc-total-allocated"
+                            style="font-size: 18px; font-weight: 700; color: var(--primary-color);">0.00 KG</div>
+                    </div>
+                    <div>
+                        <div
+                            style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">
+                            Remaining Balance</div>
+                        <div id="modal-alloc-remaining-stock"
+                            style="font-size: 18px; font-weight: 700; color: var(--text-primary);">0.00 KG</div>
+                    </div>
+                </div>
+                <div id="modal-alloc-error-banner" class="hidden"
+                    style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Total allocation exceeds available fabric stock!
+                </div>
+                <!-- Consumers Table -->
+                <div class="table-responsive">
+                    <table class="table" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr
+                                style="border-bottom: 2px solid var(--border-color); background: rgba(255,255,255,0.02);">
+                                <th style="width: 60px; text-align: center;">Priority</th>
+                                <th>Product Type</th>
+                                <th>Product / Common Group</th>
+                                <th>Color</th>
+                                <th>Size</th>
+                                <th style="text-align: right;">Net Pending (Pcs)</th>
+                                <th style="text-align: right;">Req Fabric (KG)</th>
+                                <th style="width: 140px; text-align: right;">Manual Alloc (KG)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modal-alloc-consumers-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border-color);">
+                <button class="btn btn-outline" onclick="resetModalManualAllocations()">Reset to Auto</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-outline" onclick="closePendingManualAllocModal()">Cancel</button>
+                    <button id="modal-alloc-save-btn" class="btn btn-primary"
+                        onclick="savePendingManualAllocation()">Save & Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"
         style="position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;">
     </div>
 
     <script src="components/MultiSelectFilter.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=3.0"></script>
+</body>
+
+</html>
+</div>
+</div>
+<div class="modal-footer"
+    style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border-color);">
+    <button class="btn btn-outline" onclick="resetModalManualAllocations()">Reset to Auto</button>
+    <div style="display: flex; gap: 10px;">
+        <button class="btn btn-outline" onclick="closePendingManualAllocModal()">Cancel</button>
+        <button id="modal-alloc-save-btn" class="btn btn-primary" onclick="savePendingManualAllocation()">Save &
+            Apply</button>
+    </div>
+</div>
+</div>
+</div>
+
+<div id="toast-container"
+    style="position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;">
+</div>
+
+<script src="components/MultiSelectFilter.js"></script>
+<script src="app.js?v=3.0"></script>
 </body>
 
 </html>

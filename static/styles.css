@@ -2721,6 +2721,30 @@ select option {
     box-shadow: 0 0 0 1px var(--accent-blue);
 }
 
+.spreadsheet-table select.spreadsheet-select {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 2px 4px;
+    font-size: 11px;
+    height: 26px;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.spreadsheet-table select.spreadsheet-select:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--accent-blue);
+}
+
+.spreadsheet-table select.spreadsheet-select:focus:not(:disabled) {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
 .spreadsheet-table input.spreadsheet-input-remarks {
     text-align: left;
     width: 100%;

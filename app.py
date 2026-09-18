@@ -37,6 +37,7 @@ import os
 import math
 import logging
 import psycopg2
+import psycopg2.extras
 from psycopg2 import pool
 from flask import Flask, request, jsonify, session, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -111,7 +112,15 @@ def get_db_connection():
 
 def release_db_connection(conn):
     if db_pool and conn:
-        db_pool.putconn(conn)
+        try:
+            if not conn.closed and conn.status != psycopg2.extensions.STATUS_READY:
+                conn.rollback()
+        except Exception:
+            pass
+        try:
+            db_pool.putconn(conn)
+        except Exception as e:
+            logger.warning(f"Error releasing db connection: {e}")
 
 # Setup Database Tables (Users and Planning tables)
 def setup_database():
@@ -664,6 +673,10 @@ def setup_database():
             WHERE c.production_type IN ('Common', 'Common Parent WIP')
               AND (c.fabric_name IS NULL OR c.fabric_name = '');
         """)
+
+        # Setup Pending Qty Planning tables (isolated)
+        from pending_qty_service import create_pending_qty_tables
+        create_pending_qty_tables(cur)
 
         conn.commit()
 
@@ -8986,6 +8999,10 @@ def calculate_balance_qty(cur, plan_name, financial_year, version, from_date_str
     from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
     to_date = datetime.strptime(to_date_str, '%Y-%m-%d').date()
 
+    # Advisory lock to serialize concurrent calculations for this exact period slice
+    lock_key = f"bal_qty_{plan_name}_{financial_year}_{version}_{from_date_str}_{to_date_str}"
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s));", (lock_key,))
+
     # 1. Clear old cache entries for this period
     cur.execute("""
         DELETE FROM balance_qty_cache 
@@ -9365,6 +9382,18 @@ def get_balance_qty_meta():
         cur.close()
         release_db_connection(conn)
 
+def parse_bool_query_param(val, default=True):
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    s = str(val).strip().lower()
+    if s in ('1', 'true', 'yes', 't'):
+        return True
+    if s in ('0', 'false', 'no', 'f'):
+        return False
+    return default
+
 @app.route('/api/balance-qty/data', methods=['GET'])
 @login_required
 def get_balance_qty_data():
@@ -9379,6 +9408,10 @@ def get_balance_qty_data():
     search = request.args.get('search', '').strip()
     recalculate = request.args.get('recalculate', 'false').lower() == 'true'
     
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
+
     tab = request.args.get('tab', 'standalone').strip().lower()
     all_records = request.args.get('all', 'false').lower() == 'true'
     
@@ -9414,6 +9447,7 @@ def get_balance_qty_data():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s));", (f"bal_qty_{plan_name}_{financial_year}_{version}_{from_date_str}_{to_date_str}",))
         cur.execute("""
             SELECT COUNT(*) FROM balance_qty_cache 
             WHERE plan_name = %s AND financial_year = %s AND version = %s
@@ -9437,7 +9471,7 @@ def get_balance_qty_data():
         if tab == 'common':
             where_clauses.append("p.common_production_name IS NOT NULL AND p.common_production_name <> ''")
             where_clauses.append("p.color <> 'All Colors'")
-            where_clauses.append("p.production_type = 'Common Member'")
+            where_clauses.append("p.production_type IN ('Common Member', 'Common Parent WIP')")
         else:
             where_clauses.append("(p.common_production_name IS NULL OR p.common_production_name = '')")
             
@@ -9496,6 +9530,10 @@ def get_balance_qty_data():
         total_count = cur.fetchone()[0]
         
         if tab == 'common':
+            fg_sum_expr = "SUM(p.finished_goods_qty)" if consider_fg else "0.0"
+            wip_sum_expr = "SUM(p.production_wip_qty)" if consider_wip else "0.0"
+            pending_sum_expr = "SUM(p.pending_production_qty)" if consider_pending else "0.0"
+
             query_str = f"""
                 WITH color_map AS (
                     SELECT DISTINCT ON (LOWER(TRIM(display_color)))
@@ -9525,7 +9563,7 @@ def get_balance_qty_data():
                     SUM(p.finished_goods_qty) as finished_goods_qty,
                     SUM(p.production_wip_qty) as production_wip_qty,
                     SUM(p.pending_production_qty) as pending_production_qty,
-                    GREATEST(0.0, SUM(p.calculated_qty) - SUM(p.finished_goods_qty) - SUM(p.production_wip_qty) + SUM(p.pending_production_qty)) as bal_required_qty,
+                    GREATEST(0.0, SUM(p.calculated_qty) - {fg_sum_expr} - {wip_sum_expr} + {pending_sum_expr}) as bal_required_qty,
                     'Common' as production_type,
                     p.common_production_name,
                     MIN(p.fabric_name) as fabric_name,
@@ -9544,9 +9582,14 @@ def get_balance_qty_data():
                 query_str += ";"
                 cur.execute(query_str, tuple(params))
         else:
+            fg_expr = "p.finished_goods_qty" if consider_fg else "0.0"
+            wip_expr = "p.production_wip_qty" if consider_wip else "0.0"
+            pending_expr = "p.pending_production_qty" if consider_pending else "0.0"
+
             query_str = f"""
                 SELECT id, from_date, to_date, brand, category, product, color, size,
-                       calculated_qty, finished_goods_qty, production_wip_qty, pending_production_qty, bal_required_qty,
+                       calculated_qty, finished_goods_qty, production_wip_qty, pending_production_qty,
+                       GREATEST(0.0, p.calculated_qty - {fg_expr} - {wip_expr} + {pending_expr}) as bal_required_qty,
                        production_type, common_production_name, fabric_name
                 FROM balance_qty_cache p
                 WHERE {where_str}
@@ -9607,13 +9650,21 @@ def get_balance_qty_members():
     common_name = request.args.get('common_production_name', '').strip()
     size = request.args.get('size', '').strip()
     
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
+
     if not plan_name or not version or not common_name or not size or not from_date_str or not to_date_str:
         return jsonify({'success': False, 'message': 'Missing parameters.'}), 400
         
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("""
+        fg_expr = "p.finished_goods_qty" if consider_fg else "0.0"
+        wip_expr = "p.production_wip_qty" if consider_wip else "0.0"
+        pending_expr = "p.pending_production_qty" if consider_pending else "0.0"
+
+        cur.execute(f"""
             WITH color_map AS (
                 SELECT DISTINCT ON (LOWER(TRIM(display_color)))
                     LOWER(TRIM(display_color)) AS color_key,
@@ -9629,8 +9680,10 @@ def get_balance_qty_members():
                 FROM product_master
                 ORDER BY LOWER(TRIM(product_name)), id ASC
             )
-            SELECT p.id, p.from_date, p.to_date, p.brand, p.category, p.product, p.color, p.size,
-                   p.calculated_qty, p.finished_goods_qty, p.production_wip_qty, p.pending_production_qty, p.bal_required_qty,
+            SELECT DISTINCT ON (LOWER(TRIM(p.product)), LOWER(TRIM(p.color)), LOWER(TRIM(p.size)))
+                   p.id, p.from_date, p.to_date, p.brand, p.category, p.product, p.color, p.size,
+                   p.calculated_qty, p.finished_goods_qty, p.production_wip_qty, p.pending_production_qty,
+                   GREATEST(0.0, p.calculated_qty - {fg_expr} - {wip_expr} + {pending_expr}) as bal_required_qty,
                    p.production_type, p.common_production_name,
                    COALESCE(cm.global_color_code, p.color) as global_color_code,
                    COALESCE(pm.color_category, cm.category, 'Primary') as color_category,
@@ -9641,7 +9694,7 @@ def get_balance_qty_members():
             WHERE p.plan_name = %s AND p.financial_year = %s AND p.version = %s
               AND p.from_date = %s AND p.to_date = %s AND p.common_production_name = %s AND p.size = %s
               AND p.color <> 'All Colors' AND p.production_type = 'Common Member'
-            ORDER BY p.product ASC, p.color ASC;
+            ORDER BY LOWER(TRIM(p.product)) ASC, LOWER(TRIM(p.color)) ASC, LOWER(TRIM(p.size)) ASC, p.id DESC;
         """, (plan_name, financial_year, version, from_date_str, to_date_str, common_name, size))
         rows = cur.fetchall()
         
@@ -9670,13 +9723,17 @@ def get_balance_qty_members():
         cur.close()
         release_db_connection(conn)
 
-def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str):
+def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str, consider_fg=True, consider_wip=True, consider_pending=True):
     from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
     to_date = datetime.strptime(to_date_str, '%Y-%m-%d').date()
 
+    fg_expr = "p.finished_goods_qty" if consider_fg else "0.0"
+    wip_expr = "p.production_wip_qty" if consider_wip else "0.0"
+    pending_expr = "p.pending_production_qty" if consider_pending else "0.0"
+
     # 1. Standalone Query
     # Prioritizes size-specific mappings in product_dia_mapping, and falls back to NULL size_id.
-    cur.execute("""
+    cur.execute(f"""
         WITH dia_size_map AS (
             SELECT DISTINCT ON (product_id, size_id)
                 product_id, size_id, dia
@@ -9714,7 +9771,7 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
             p.category,
             p.color,
             p.size,
-            p.bal_required_qty,
+            GREATEST(0.0, p.calculated_qty - {fg_expr} - {wip_expr} + {pending_expr}) as bal_required_qty,
             fm.fabric_name,
             COALESCE(pdm.dia, pdm_common.dia) as dia,
             pm.fabric_consumption
@@ -9730,9 +9787,13 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
     """, (plan_name, financial_year, version, from_date, to_date))
     standalone_rows = cur.fetchall()
 
+    fg_sum_expr = "SUM(p.finished_goods_qty)" if consider_fg else "0.0"
+    wip_sum_expr = "SUM(p.production_wip_qty)" if consider_wip else "0.0"
+    pending_sum_expr = "SUM(p.pending_production_qty)" if consider_pending else "0.0"
+
     # 2. Common Production Query
     # For common production, we group the members in the cache by common_production_name, global color code, and size.
-    cur.execute("""
+    cur.execute(f"""
         WITH color_map AS (
             SELECT DISTINCT ON (LOWER(TRIM(display_color)))
                 LOWER(TRIM(display_color)) AS color_key,
@@ -9791,7 +9852,7 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
                 MIN(p.category) as category,
                 COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color,
                 p.size,
-                GREATEST(0.0, SUM(p.calculated_qty) - SUM(p.finished_goods_qty) - SUM(p.production_wip_qty) + SUM(p.pending_production_qty)) as bal_required_qty,
+                GREATEST(0.0, SUM(p.calculated_qty) - {fg_sum_expr} - {wip_sum_expr} + {pending_sum_expr}) as bal_required_qty,
                 COALESCE(MAX(cm.global_color_code), MIN(p.color)) as global_color_code
             FROM balance_qty_cache p
             LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
@@ -9800,7 +9861,7 @@ def _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_da
               AND p.from_date = %s AND p.to_date = %s
               AND p.common_production_name IS NOT NULL AND p.common_production_name <> ''
               AND p.color <> 'All Colors'
-              AND p.production_type = 'Common Member'
+              AND p.production_type IN ('Common Member', 'Common Parent WIP')
             GROUP BY p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
         ) sub
         JOIN common_prod_map cpm ON LOWER(TRIM(sub.common_production_name)) = cpm.cp_key
@@ -9828,6 +9889,10 @@ def get_fabric_req_data():
     color_filter = request.args.get('color', '').strip()
     dia_filter = request.args.get('dia', '').strip()
     search_filter = request.args.get('search', '').strip()
+
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
 
     recalculate = request.args.get('recalculate', 'false').lower() == 'true'
     all_records = request.args.get('all', 'false').lower() == 'true'
@@ -9867,7 +9932,7 @@ def get_fabric_req_data():
             conn.commit()
 
         # Fetch detail rows
-        all_details = _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str)
+        all_details = _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str, consider_fg, consider_wip, consider_pending)
 
         # Preload Stock & WIP
         stock_dict = {}
@@ -10019,6 +10084,10 @@ def get_fabric_req_details():
     dia_filter = request.args.get('dia', '').strip()
     search_filter = request.args.get('search', '').strip()
 
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
+
     # Target key filters for specific detail row breakdown
     target_fabric = request.args.get('target_fabric_name', '').strip()
     target_color = request.args.get('target_color', '').strip()
@@ -10031,7 +10100,7 @@ def get_fabric_req_details():
     cur = conn.cursor()
     try:
         # Fetch details
-        all_details = _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str)
+        all_details = _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str, consider_fg, consider_wip, consider_pending)
 
         # Process and filter in Python
         detail_items = []
@@ -10119,6 +10188,10 @@ def export_balance_qty():
     product = request.args.get('product', '').strip()
     search = request.args.get('search', '').strip()
     
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
+
     tab = request.args.get('tab', 'standalone').strip().lower()
     
     if not plan_name or not financial_year or not version or not from_date_str or not to_date_str:
@@ -10141,7 +10214,7 @@ def export_balance_qty():
             where_clauses.append("p.color <> 'All Colors'")
             where_clauses.append("p.production_type = 'Common Member'")
         else:
-            where_clauses.append("p.common_production_name IS NULL OR p.common_production_name = ''")
+            where_clauses.append("p.common_production_name IS NULL OR p.common_production_name = '')")
             
         if brand:
             where_clauses.append("p.brand = %s")
@@ -10168,6 +10241,10 @@ def export_balance_qty():
         where_str = " AND ".join(where_clauses)
         
         if tab == 'common':
+            fg_sum_expr = "SUM(p.finished_goods_qty)" if consider_fg else "0.0"
+            wip_sum_expr = "SUM(p.production_wip_qty)" if consider_wip else "0.0"
+            pending_sum_expr = "SUM(p.pending_production_qty)" if consider_pending else "0.0"
+
             query_str = f"""
                 WITH color_map AS (
                     SELECT DISTINCT ON (LOWER(TRIM(display_color)))
@@ -10188,7 +10265,7 @@ def export_balance_qty():
                        COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color, p.size,
                        SUM(p.calculated_qty) as calculated_qty, SUM(p.finished_goods_qty) as finished_goods_qty,
                        SUM(p.production_wip_qty) as production_wip_qty, SUM(p.pending_production_qty) as pending_production_qty,
-                       GREATEST(0.0, SUM(p.calculated_qty) - SUM(p.finished_goods_qty) - SUM(p.production_wip_qty) + SUM(p.pending_production_qty)) as bal_required_qty,
+                       GREATEST(0.0, SUM(p.calculated_qty) - {fg_sum_expr} - {wip_sum_expr} + {pending_sum_expr}) as bal_required_qty,
                        'Common' as production_type, p.common_production_name
                 FROM balance_qty_cache p
                 LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
@@ -10198,9 +10275,14 @@ def export_balance_qty():
                 ORDER BY p.common_production_name ASC, p.size ASC, color ASC;
             """
         else:
+            fg_expr = "p.finished_goods_qty" if consider_fg else "0.0"
+            wip_expr = "p.production_wip_qty" if consider_wip else "0.0"
+            pending_expr = "p.pending_production_qty" if consider_pending else "0.0"
+
             query_str = f"""
                 SELECT from_date, to_date, brand, category, product, color, size,
-                       calculated_qty, finished_goods_qty, production_wip_qty, pending_production_qty, bal_required_qty,
+                       calculated_qty, finished_goods_qty, production_wip_qty, pending_production_qty,
+                       GREATEST(0.0, p.calculated_qty - {fg_expr} - {wip_expr} + {pending_expr}) as bal_required_qty,
                        production_type, common_production_name
                 FROM balance_qty_cache p
                 WHERE {where_str}
@@ -10664,18 +10746,44 @@ def get_planning_stock_counts():
         if conn:
             release_db_connection(conn)
 
-# Delete All Stock & WIP Data API
-@app.route('/api/planning-stock/delete-all', methods=['DELETE'])
-@app.route('/api/stock-wip/delete-all', methods=['DELETE'])
+# Delete Stock & WIP Data API (Supports selective table deletion or all tables)
+@app.route('/api/planning-stock/delete-all', methods=['DELETE', 'POST'])
+@app.route('/api/stock-wip/delete-all', methods=['DELETE', 'POST'])
 @login_required
 def delete_all_planning_stock():
+    data = request.json or {}
+    selected_tabs = data.get('tabs') or data.get('tables')
+    
+    valid_map = {
+        'fabric-stock': 'fabric_stock',
+        'fabric_stock': 'fabric_stock',
+        'fabric-wip': 'fabric_wip',
+        'fabric_wip': 'fabric_wip',
+        'production-wip': 'production_wip',
+        'production_wip': 'production_wip',
+        'pending-orders': 'pending_orders',
+        'pending_orders': 'pending_orders',
+        'finished-goods': 'finished_goods',
+        'finished_goods': 'finished_goods'
+    }
+    
+    if selected_tabs:
+        tables = []
+        for t in selected_tabs:
+            if t in valid_map and valid_map[t] not in tables:
+                tables.append(valid_map[t])
+    else:
+        tables = ['fabric_stock', 'fabric_wip', 'production_wip', 'pending_orders', 'finished_goods']
+        
+    if not tables:
+        return jsonify({'success': False, 'message': 'No valid tables selected for deletion.'}), 400
+
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
         counts = {}
-        tables = ['fabric_stock', 'fabric_wip', 'production_wip', 'pending_orders', 'finished_goods']
         total_deleted = 0
         
         for tbl in tables:
@@ -10685,14 +10793,15 @@ def delete_all_planning_stock():
             total_deleted += cnt
             cur.execute(f"DELETE FROM {tbl};")
             
-        cur.execute("DELETE FROM balance_qty_cache;")
-        
+        if any(t in ['production_wip', 'pending_orders', 'finished_goods'] for t in tables):
+            cur.execute("DELETE FROM balance_qty_cache;")
+            
         conn.commit()
         cur.close()
         
         return jsonify({
             'success': True,
-            'message': 'All Stock & WIP data deleted successfully.',
+            'message': 'Selected Stock & WIP records deleted successfully.',
             'deleted_counts': counts,
             'total_deleted': total_deleted
         })
@@ -10876,12 +10985,9 @@ def save_planning_stock_data():
                 'remaining_rows': invalid_rows
             })
             
-        for r in valid_rows:
-            if tab in ['fabric-stock', 'fabric-wip']:
-                cur.execute(f"""
-                    INSERT INTO {table_name} (fabric_name, gsm, dia, color, uom, weight_mtr, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                """, (
+        if tab in ['fabric-stock', 'fabric-wip']:
+            data_to_insert = [
+                (
                     r.get('fabric_name'),
                     int(float(r.get('gsm', 0))),
                     float(r.get('dia', 0)),
@@ -10892,12 +10998,21 @@ def save_planning_stock_data():
                     'Valid',
                     username,
                     username
-                ))
-            elif tab == 'production-wip':
-                cur.execute(f"""
-                    INSERT INTO {table_name} (product_name, color, size, production_type, production_group, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                """, (
+                )
+                for r in valid_rows
+            ]
+            psycopg2.extras.execute_values(
+                cur,
+                f"""
+                    INSERT INTO {table_name} (fabric_name, gsm, dia, color, uom, weight_mtr, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                    VALUES %s;
+                """,
+                data_to_insert,
+                template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+            )
+        elif tab == 'production-wip':
+            data_to_insert = [
+                (
                     r.get('product_name'),
                     r.get('color'),
                     r.get('size'),
@@ -10908,12 +11023,21 @@ def save_planning_stock_data():
                     'Valid',
                     username,
                     username
-                ))
-            else: # pending-orders, finished-goods
-                cur.execute(f"""
-                    INSERT INTO {table_name} (product_name, color, size, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                """, (
+                )
+                for r in valid_rows
+            ]
+            psycopg2.extras.execute_values(
+                cur,
+                f"""
+                    INSERT INTO {table_name} (product_name, color, size, production_type, production_group, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                    VALUES %s;
+                """,
+                data_to_insert,
+                template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+            )
+        else: # pending-orders, finished-goods
+            data_to_insert = [
+                (
                     r.get('product_name'),
                     r.get('color'),
                     r.get('size'),
@@ -10922,7 +11046,18 @@ def save_planning_stock_data():
                     'Valid',
                     username,
                     username
-                ))
+                )
+                for r in valid_rows
+            ]
+            psycopg2.extras.execute_values(
+                cur,
+                f"""
+                    INSERT INTO {table_name} (product_name, color, size, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                    VALUES %s;
+                """,
+                data_to_insert,
+                template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+            )
                 
         if tab in ['production-wip', 'pending-orders', 'finished-goods']:
             cur.execute("DELETE FROM balance_qty_cache;")
@@ -11070,53 +11205,80 @@ def save_bulk_feed_data():
             val_rows = validated_sheets[sheet_title]
             valid_rows = [r for r in val_rows if r.get('validation_status') == 'VALID']
             
-            for r in valid_rows:
+            if valid_rows:
                 if tab_slug in ['fabric-stock', 'fabric-wip']:
-                    cur.execute(f"""
-                        INSERT INTO {table_name} (fabric_name, gsm, dia, color, uom, weight_mtr, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                    """, (
-                        r.get('fabric_name'),
-                        int(float(r.get('gsm', 0))),
-                        float(r.get('dia', 0)),
-                        r.get('color'),
-                        r.get('uom', 'KGS'),
-                        float(r.get('weight_mtr', 0)),
-                        'VALID',
-                        'Valid',
-                        username,
-                        username
-                    ))
+                    data_to_insert = [
+                        (
+                            r.get('fabric_name'),
+                            int(float(r.get('gsm', 0))),
+                            float(r.get('dia', 0)),
+                            r.get('color'),
+                            r.get('uom', 'KGS'),
+                            float(r.get('weight_mtr', 0)),
+                            'VALID',
+                            'Valid',
+                            username,
+                            username
+                        )
+                        for r in valid_rows
+                    ]
+                    psycopg2.extras.execute_values(
+                        cur,
+                        f"""
+                            INSERT INTO {table_name} (fabric_name, gsm, dia, color, uom, weight_mtr, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                            VALUES %s;
+                        """,
+                        data_to_insert,
+                        template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+                    )
                 elif tab_slug == 'production-wip':
-                    cur.execute(f"""
-                        INSERT INTO {table_name} (product_name, color, size, production_type, production_group, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                    """, (
-                        r.get('product_name'),
-                        r.get('color'),
-                        r.get('size'),
-                        r.get('production_type', 'Common'),
-                        r.get('production_group', 'Group A'),
-                        int(float(r.get('qty', 0))),
-                        'VALID',
-                        'Valid',
-                        username,
-                        username
-                    ))
+                    data_to_insert = [
+                        (
+                            r.get('product_name'),
+                            r.get('color'),
+                            r.get('size'),
+                            r.get('production_type', 'Common'),
+                            r.get('production_group', 'Group A'),
+                            int(float(r.get('qty', 0))),
+                            'VALID',
+                            'Valid',
+                            username,
+                            username
+                        )
+                        for r in valid_rows
+                    ]
+                    psycopg2.extras.execute_values(
+                        cur,
+                        f"""
+                            INSERT INTO {table_name} (product_name, color, size, production_type, production_group, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                            VALUES %s;
+                        """,
+                        data_to_insert,
+                        template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+                    )
                 else: # pending-orders, finished-goods
-                    cur.execute(f"""
-                        INSERT INTO {table_name} (product_name, color, size, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW());
-                    """, (
-                        r.get('product_name'),
-                        r.get('color'),
-                        r.get('size'),
-                        int(float(r.get('qty', 0))),
-                        'VALID',
-                        'Valid',
-                        username,
-                        username
-                    ))
+                    data_to_insert = [
+                        (
+                            r.get('product_name'),
+                            r.get('color'),
+                            r.get('size'),
+                            int(float(r.get('qty', 0))),
+                            'VALID',
+                            'Valid',
+                            username,
+                            username
+                        )
+                        for r in valid_rows
+                    ]
+                    psycopg2.extras.execute_values(
+                        cur,
+                        f"""
+                            INSERT INTO {table_name} (product_name, color, size, qty, validation_status, validation_message, created_by, updated_by, created_at, updated_at)
+                            VALUES %s;
+                        """,
+                        data_to_insert,
+                        template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
+                    )
                     
             inserted_counts[sheet_title] = len(valid_rows)
             total_inserted += len(valid_rows)
@@ -11139,6 +11301,613 @@ def save_bulk_feed_data():
     finally:
         if conn:
             release_db_connection(conn)
+
+# =====================================================================
+# PENDING QTY PLANNING MODULE APIS (ISOLATED & PRODUCTION-SAFE)
+# =====================================================================
+from pending_qty_service import (
+    calculate_pending_qty_engine, get_pending_plan_meta, get_pending_plan_summary,
+    get_pending_plan_data, get_cutting_plan_data, get_fab_required_data,
+    get_fabric_pool_consumers, get_common_production_members,
+    update_plan_line_priority, save_manual_allocation, confirm_pending_plan,
+    export_pending_plan_csv
+)
+
+@app.route('/api/pending-qty-plan/meta', methods=['GET'])
+@login_required
+def api_pending_qty_plan_meta():
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        data = get_pending_plan_meta(cur)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching pending plan meta: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+def resolve_or_get_latest_plan_id(cur, plan_id_arg=None, username="System"):
+    if plan_id_arg and str(plan_id_arg).strip() not in ('null', 'undefined', '', 'None'):
+        try:
+            return int(plan_id_arg)
+        except ValueError:
+            pass
+    cur.execute("SELECT id FROM pending_qty_plans ORDER BY id DESC LIMIT 1;")
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    res = calculate_pending_qty_engine(cur, username=username)
+    return res.get('plan_id')
+
+@app.route('/api/pending-qty-plan/summary', methods=['GET'])
+@login_required
+def api_pending_qty_plan_summary():
+    plan_id = request.args.get('plan_id')
+    plan_name = request.args.get('plan_name') or 'LIVE_PENDING_ORDERS'
+    financial_year = request.args.get('financial_year') or 'CURRENT'
+    version = request.args.get('version') or 'v1'
+    from_date = request.args.get('from_date') or '2020-01-01'
+    to_date = request.args.get('to_date') or '2099-12-31'
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        resolved_pid = resolve_or_get_latest_plan_id(cur, plan_id)
+        data = get_pending_plan_summary(cur, plan_name, financial_year, version, from_date, to_date, plan_id=resolved_pid)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching pending plan summary: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/calculate', methods=['POST'])
+@login_required
+def api_pending_qty_plan_calculate():
+    payload = request.json or {}
+    plan_name = payload.get('plan_name') or 'LIVE_PENDING_ORDERS'
+    financial_year = payload.get('financial_year') or 'CURRENT'
+    version = payload.get('version') or 'v1'
+    from_date = payload.get('from_date') or '2020-01-01'
+    to_date = payload.get('to_date') or '2099-12-31'
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        username = session.get('username', 'System')
+        res = calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_date, to_date, username=username)
+        conn.commit()
+        return jsonify(res)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Error calculating pending plan: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/pending-plan', methods=['GET'])
+@login_required
+def api_pending_qty_plan_pending():
+    plan_id_raw = request.args.get('plan_id')
+    filters = {
+        'brand': request.args.get('brand', ''),
+        'category': request.args.get('category', ''),
+        'product_type': request.args.get('product_type', 'All'),
+        'common_production_name': request.args.get('common_production_name', ''),
+        'product': request.args.get('product', ''),
+        'color': request.args.get('color', ''),
+        'size': request.args.get('size', ''),
+        'fabric_name': request.args.get('fabric_name', ''),
+        'fabric_color': request.args.get('fabric_color', ''),
+        'status': request.args.get('status', 'All'),
+        'search': request.args.get('search', '')
+    }
+    page = int(request.args.get('page', 1))
+    try:
+        per_page = int(request.args.get('per_page', 50))
+    except (ValueError, TypeError):
+        per_page = 50
+    all_records = (per_page == -1 or per_page >= 100000)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        plan_id = resolve_or_get_latest_plan_id(cur, plan_id_raw)
+        if not plan_id:
+            return jsonify({'success': True, 'rows': [], 'total_count': 0, 'page': page, 'per_page': per_page, 'totals': {'requirement_qty': 0, 'fg_qty': 0, 'wip_qty': 0, 'already_planned_qty': 0, 'net_pending_qty': 0}})
+        data = get_pending_plan_data(cur, int(plan_id), filters, page=page, per_page=per_page, all_records=all_records)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching pending plan table: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/cutting-plan', methods=['GET'])
+@login_required
+def api_pending_qty_plan_cutting():
+    plan_id_raw = request.args.get('plan_id')
+    filters = {
+        'brand': request.args.get('brand', ''),
+        'category': request.args.get('category', ''),
+        'product_type': request.args.get('product_type', 'All'),
+        'common_production_name': request.args.get('common_production_name', ''),
+        'product': request.args.get('product', ''),
+        'color': request.args.get('color', ''),
+        'size': request.args.get('size', ''),
+        'fabric_name': request.args.get('fabric_name', ''),
+        'fabric_color': request.args.get('fabric_color', ''),
+        'status': request.args.get('status', 'All'),
+        'search': request.args.get('search', '')
+    }
+    page = int(request.args.get('page', 1))
+    try:
+        per_page = int(request.args.get('per_page', 50))
+    except (ValueError, TypeError):
+        per_page = 50
+    all_records = (per_page == -1 or per_page >= 100000)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        plan_id = resolve_or_get_latest_plan_id(cur, plan_id_raw)
+        if not plan_id:
+            return jsonify({'success': True, 'rows': [], 'total_count': 0, 'page': page, 'per_page': per_page, 'totals': {'net_pending_qty': 0, 'fabric_required_kg': 0, 'allocated_fabric_kg': 0, 'cuttable_qty': 0, 'hold_qty': 0, 'shortage_kg': 0}})
+        data = get_cutting_plan_data(cur, int(plan_id), filters, page=page, per_page=per_page, all_records=all_records)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching cutting plan table: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/fab-required', methods=['GET'])
+@login_required
+def api_pending_qty_plan_fab_required():
+    plan_id_raw = request.args.get('plan_id')
+    filters = {
+        'fabric_name': request.args.get('fabric_name', ''),
+        'fabric_color': request.args.get('fabric_color', ''),
+        'status': request.args.get('status', 'All')
+    }
+    page = int(request.args.get('page', 1))
+    try:
+        per_page = int(request.args.get('per_page', 50))
+    except (ValueError, TypeError):
+        per_page = 50
+    all_records = (per_page == -1 or per_page >= 100000)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        plan_id = resolve_or_get_latest_plan_id(cur, plan_id_raw)
+        if not plan_id:
+            return jsonify({'success': True, 'rows': [], 'total_count': 0, 'page': page, 'per_page': per_page, 'totals': {'required_fabric_kg': 0, 'available_stock_kg': 0, 'allocated_fabric_kg': 0, 'shortage_kg': 0}})
+        data = get_fab_required_data(cur, int(plan_id), filters, page=page, per_page=per_page, all_records=all_records)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching fab required table: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/pool-consumers', methods=['GET'])
+@login_required
+def api_pending_qty_plan_pool_consumers():
+    plan_id = request.args.get('plan_id')
+    fabric_name = request.args.get('fabric_name', '').strip()
+    fabric_color = request.args.get('fabric_color', '').strip()
+    dia = request.args.get('dia', 0.0)
+
+    if not plan_id or not fabric_name:
+        return jsonify({'success': False, 'message': 'plan_id and fabric_name are required.'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        data = get_fabric_pool_consumers(cur, int(plan_id), fabric_name, fabric_color, float(dia))
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching pool consumers: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/members', methods=['GET'])
+@login_required
+def api_pending_qty_plan_members():
+    plan_id = request.args.get('plan_id')
+    common_name = request.args.get('common_name', '').strip()
+    color = request.args.get('color', '').strip()
+    size = request.args.get('size', '').strip()
+
+    if not plan_id or not common_name:
+        return jsonify({'success': False, 'message': 'plan_id and common_name are required.'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        data = get_common_production_members(cur, int(plan_id), common_name, color, size)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching common production members: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/update-priority', methods=['POST'])
+@login_required
+def api_pending_qty_plan_update_priority():
+    payload = request.json or {}
+    plan_id = payload.get('plan_id')
+    line_id = payload.get('line_id')
+    priority = payload.get('priority')
+
+    if not plan_id or not line_id or priority is None:
+        return jsonify({'success': False, 'message': 'plan_id, line_id, and priority are required.'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        username = session.get('username', 'Planner')
+        res = update_plan_line_priority(cur, int(plan_id), int(line_id), int(priority), username=username)
+        conn.commit()
+        return jsonify(res)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Error updating priority: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/manual-allocation', methods=['POST'])
+@login_required
+def api_pending_qty_plan_manual_allocation():
+    payload = request.json or {}
+    plan_id = payload.get('plan_id')
+    fabric_name = payload.get('fabric_name', '').strip()
+    fabric_color = payload.get('fabric_color', '').strip()
+    dia = payload.get('dia', 0.0)
+    gsm = payload.get('gsm', 0)
+    allocations = payload.get('allocations', [])
+
+    if not plan_id or not fabric_name or not allocations:
+        return jsonify({'success': False, 'message': 'plan_id, fabric_name, and allocations list are required.'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        username = session.get('username', 'Planner')
+        res = save_manual_allocation(cur, int(plan_id), fabric_name, fabric_color, float(dia), int(gsm), allocations, username=username)
+        if not res.get('success'):
+            conn.rollback()
+            return jsonify(res), 400
+        conn.commit()
+        return jsonify(res)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Error saving manual allocation: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/confirm', methods=['POST'])
+@login_required
+def api_pending_qty_plan_confirm():
+    payload = request.json or {}
+    plan_id = payload.get('plan_id')
+    if not plan_id:
+        return jsonify({'success': False, 'message': 'plan_id is required.'}), 400
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        username = session.get('username', 'Planner')
+        res = confirm_pending_plan(cur, int(plan_id), username=username)
+        conn.commit()
+        return jsonify(res)
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Error confirming plan: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/pending-qty-plan/export', methods=['GET'])
+@login_required
+def api_pending_qty_plan_export():
+    from flask import Response
+    plan_id = request.args.get('plan_id')
+    export_type = request.args.get('tab', 'pending-plan')
+
+    if not plan_id:
+        return "plan_id is required.", 400
+
+    filters = {
+        'brand': request.args.get('brand', ''),
+        'category': request.args.get('category', ''),
+        'product_type': request.args.get('product_type', 'All'),
+        'common_production_name': request.args.get('common_production_name', ''),
+        'product': request.args.get('product', ''),
+        'color': request.args.get('color', ''),
+        'size': request.args.get('size', ''),
+        'fabric_name': request.args.get('fabric_name', ''),
+        'fabric_color': request.args.get('fabric_color', ''),
+        'status': request.args.get('status', 'All'),
+        'search': request.args.get('search', '')
+    }
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        csv_data = export_pending_plan_csv(cur, export_type, int(plan_id), filters)
+        response = Response(csv_data, mimetype='text/csv')
+        filename = f"Pending_Qty_{export_type}_{plan_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        logger.error(f"Error exporting pending qty csv: {e}", exc_info=True)
+        return f"Error exporting CSV: {str(e)}", 500
+# =====================================================================
+# LEAD DAYS MASTER MODULE (PREPARATION FOR FUTURE BASE STOCK MODULE)
+# STRICTLY ISOLATED & 100% READ-ONLY DATABASE ACCESS
+# PERSISTENCE VIA config/lead_days_config.json
+# =====================================================================
+import json
+import threading
+
+_lead_days_file_lock = threading.Lock()
+
+def get_lead_days_config_path():
+    config_dir = os.path.join(os.path.dirname(__file__), 'config')
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, 'lead_days_config.json')
+
+def load_lead_days_config():
+    config_file = get_lead_days_config_path()
+    with _lead_days_file_lock:
+        if not os.path.exists(config_file):
+            return {"fabric": {}, "production": {"standalone": {}, "common_production": {}}}
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    data = {}
+                data.setdefault("fabric", {})
+                data.setdefault("production", {})
+                data["production"].setdefault("standalone", {})
+                data["production"].setdefault("common_production", {})
+                return data
+        except Exception as e:
+            logger.error(f"Error reading lead_days_config.json: {e}")
+            return {"fabric": {}, "production": {"standalone": {}, "common_production": {}}}
+
+def save_lead_days_config(data):
+    config_file = get_lead_days_config_path()
+    config_dir = os.path.dirname(config_file)
+    temp_file = os.path.join(config_dir, 'lead_days_config.json.tmp')
+    with _lead_days_file_lock:
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        os.replace(temp_file, config_file)
+
+def resolve_fabric_lead_days(fabric_id):
+    """Concept helper for future Base Stock module (Read-only from JSON)"""
+    if fabric_id is None:
+        return None
+    config = load_lead_days_config()
+    return config.get("fabric", {}).get(str(fabric_id))
+
+def resolve_production_lead_days(product_id, cur):
+    """Concept helper for future Base Stock module (Read-only from DB + JSON)"""
+    if product_id is None:
+        return None
+    config = load_lead_days_config()
+    cur.execute("SELECT common_production_id FROM product_master WHERE id = %s;", (int(product_id),))
+    row = cur.fetchone()
+    if row and row[0]:
+        cp_id = str(row[0])
+        return config.get("production", {}).get("common_production", {}).get(cp_id)
+    else:
+        p_id = str(product_id)
+        return config.get("production", {}).get("standalone", {}).get(p_id)
+
+@app.route('/api/masters/lead-days/fabric', methods=['GET'])
+@login_required
+def api_get_fabric_lead_days():
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                f.id, f.fabric_name, f.gsm, f.uom, f.status,
+                COALESCE(ARRAY_AGG(fd.dia ORDER BY fd.dia) FILTER (WHERE fd.dia IS NOT NULL), '{}') as dias
+            FROM fabric_master f
+            LEFT JOIN fabric_dia_mapping fd ON f.id = fd.fabric_id
+            WHERE f.status = 'Active'
+            GROUP BY f.id, f.fabric_name, f.gsm, f.uom, f.status
+            ORDER BY f.fabric_name ASC;
+        """)
+        rows = cur.fetchall()
+        config = load_lead_days_config()
+        fabric_config = config.get("fabric", {})
+
+        result = []
+        for r in rows:
+            f_id = r[0]
+            f_name = r[1]
+            gsm = float(r[2]) if r[2] is not None else 0
+            uom = r[3] or 'KGS'
+            dias_raw = r[5] or []
+            dia_list = [float(d) for d in dias_raw]
+            lead_days = fabric_config.get(str(f_id))
+
+            result.append({
+                'id': f_id,
+                'fabric_name': f_name,
+                'gsm': gsm,
+                'uom': uom,
+                'dias': dia_list,
+                'lead_days': lead_days
+            })
+        return jsonify({'success': True, 'fabrics': result})
+    except Exception as e:
+        logger.error(f"Error fetching fabric lead days: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/masters/lead-days/fabric', methods=['POST'])
+@login_required
+def api_save_fabric_lead_days():
+    payload = request.json or {}
+    fabric_id = payload.get('fabric_id')
+    lead_days = payload.get('lead_days')
+
+    if fabric_id is None:
+        return jsonify({'success': False, 'message': 'fabric_id is required.'}), 400
+
+    if lead_days is not None:
+        try:
+            val = int(lead_days)
+            if val < 0:
+                return jsonify({'success': False, 'message': 'Lead Days must be 0 or greater.'}), 400
+            lead_days = val
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': 'Lead Days must be a valid integer.'}), 400
+
+    config = load_lead_days_config()
+    str_id = str(fabric_id)
+    if lead_days is None:
+        config["fabric"].pop(str_id, None)
+    else:
+        config["fabric"][str_id] = lead_days
+
+    save_lead_days_config(config)
+    return jsonify({'success': True, 'message': 'Fabric Lead Days saved successfully.', 'fabric_id': fabric_id, 'lead_days': lead_days})
+
+@app.route('/api/masters/lead-days/production', methods=['GET'])
+@login_required
+def api_get_production_lead_days():
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        # 1. Fetch Stand-Alone Products (where common_production_id IS NULL)
+        cur.execute("""
+            SELECT 
+                p.id, p.product_name, p.product_type, p.production_type,
+                b.brand_name, b.brand_code, pd.product_description, pd.description_code
+            FROM product_master p
+            LEFT JOIN brand_master b ON p.brand_id = b.id
+            LEFT JOIN product_description_master pd ON p.product_description_id = pd.id
+            WHERE p.status = 'Active' AND p.common_production_id IS NULL
+            ORDER BY p.product_name ASC;
+        """)
+        sa_rows = cur.fetchall()
+
+        # 2. Fetch Common Production Groups with aggregate member count
+        cur.execute("""
+            SELECT 
+                cpm.id, cpm.common_production_name,
+                COUNT(p.id) as member_count,
+                ARRAY_AGG(p.product_name ORDER BY p.product_name) FILTER (WHERE p.id IS NOT NULL) as member_products
+            FROM common_production_master cpm
+            LEFT JOIN product_master p ON p.common_production_id = cpm.id AND p.status = 'Active'
+            WHERE cpm.status = 'Active'
+            GROUP BY cpm.id, cpm.common_production_name
+            ORDER BY cpm.common_production_name ASC;
+        """)
+        cp_rows = cur.fetchall()
+
+        config = load_lead_days_config()
+        sa_config = config.get("production", {}).get("standalone", {})
+        cp_config = config.get("production", {}).get("common_production", {})
+
+        standalone_list = []
+        for r in sa_rows:
+            p_id = r[0]
+            p_name = r[1]
+            p_type = r[2] or 'Standard'
+            brand_name = r[4] or '-'
+            brand_code = r[5] or ''
+            desc_code = r[7] or ''
+            code = brand_code or desc_code or f"P{p_id}"
+            lead_days = sa_config.get(str(p_id))
+
+            standalone_list.append({
+                'type': 'Stand Alone',
+                'id': p_id,
+                'name': p_name,
+                'code': code,
+                'brand_name': brand_name,
+                'lead_days': lead_days
+            })
+
+        common_list = []
+        for r in cp_rows:
+            cp_id = r[0]
+            cp_name = r[1]
+            member_count = r[2] or 0
+            members = r[3] or []
+            lead_days = cp_config.get(str(cp_id))
+
+            common_list.append({
+                'type': 'Common Production',
+                'id': cp_id,
+                'name': cp_name,
+                'member_count': member_count,
+                'member_products': members,
+                'lead_days': lead_days
+            })
+
+        return jsonify({
+            'success': True,
+            'standalone': standalone_list,
+            'common_production': common_list
+        })
+    except Exception as e:
+        logger.error(f"Error fetching production lead days: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        release_db_connection(conn)
+
+@app.route('/api/masters/lead-days/production', methods=['POST'])
+@login_required
+def api_save_production_lead_days():
+    payload = request.json or {}
+    item_type = payload.get('type') # 'standalone' or 'common_production'
+    item_id = payload.get('id')
+    lead_days = payload.get('lead_days')
+
+    if not item_type or item_id is None:
+        return jsonify({'success': False, 'message': 'type and id are required.'}), 400
+
+    if item_type not in ('standalone', 'common_production'):
+        return jsonify({'success': False, 'message': 'type must be standalone or common_production.'}), 400
+
+    if lead_days is not None:
+        try:
+            val = int(lead_days)
+            if val < 0:
+                return jsonify({'success': False, 'message': 'Lead Days must be 0 or greater.'}), 400
+            lead_days = val
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': 'Lead Days must be a valid integer.'}), 400
+
+    config = load_lead_days_config()
+    str_id = str(item_id)
+    if lead_days is None:
+        config["production"][item_type].pop(str_id, None)
+    else:
+        config["production"][item_type][str_id] = lead_days
+
+    save_lead_days_config(config)
+    return jsonify({'success': True, 'message': 'Production Lead Days saved successfully.', 'type': item_type, 'id': item_id, 'lead_days': lead_days})
 
 # Route to serve the main HTML index page
 @app.route('/')

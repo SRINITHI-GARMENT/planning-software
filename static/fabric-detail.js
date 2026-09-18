@@ -15,6 +15,9 @@ let fabricState = {
     category: '',
     product: '',
     search: '',
+    considerFg: true,
+    considerWip: true,
+    considerPending: true,
 
     currentMetric: 'fabric_req', // 'fabric_req' | 'fabric_stock' | 'fabric_wip' | 'inhand' | 'bal_required_fab'
     colorSearchTerm: '',
@@ -45,6 +48,9 @@ function initFromUrlParams() {
     fabricState.category = params.get('category') || '';
     fabricState.product = params.get('product') || '';
     fabricState.search = params.get('search') || '';
+    fabricState.considerFg = params.get('consider_fg') !== 'false';
+    fabricState.considerWip = params.get('consider_wip') !== 'false';
+    fabricState.considerPending = params.get('consider_pending') !== 'false';
 
     // Update Title and Display Fabric Name
     document.title = fabricState.fabricName ? `${fabricState.fabricName} - Fabric Requirement Details` : 'Fabric Requirement Details';
@@ -92,6 +98,14 @@ function renderContextChips() {
 
     if (fabricState.search) {
         chips.push({ label: 'Search', value: fabricState.search, icon: 'fa-magnifying-glass' });
+    }
+
+    const considerList = [];
+    if (fabricState.considerFg) considerList.push('FG Stock');
+    if (fabricState.considerWip) considerList.push('WIP Qty');
+    if (fabricState.considerPending) considerList.push('Pending Qty');
+    if (considerList.length < 3) {
+        chips.push({ label: 'Consider', value: considerList.length > 0 ? considerList.join(', ') : 'None', icon: 'fa-filter' });
     }
 
     chips.forEach(chip => {
@@ -143,6 +157,9 @@ async function fetchFabricDetailData(forceRecalculate = false) {
     if (fabricState.category) params.set('category', fabricState.category);
     if (fabricState.product) params.set('product', fabricState.product);
     if (fabricState.search) params.set('search', fabricState.search);
+    params.set('consider_fg', fabricState.considerFg);
+    params.set('consider_wip', fabricState.considerWip);
+    params.set('consider_pending', fabricState.considerPending);
     if (forceRecalculate) params.set('recalculate', 'true');
 
     const url = `/api/fabric-req/data?${params.toString()}`;

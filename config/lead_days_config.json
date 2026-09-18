@@ -1,0 +1,13 @@
+{
+  "fabric": {
+    "21": 30,
+    "19": 30,
+    "28": 45
+  },
+  "production": {
+    "standalone": {},
+    "common_production": {
+      "18": 20
+    }
+  }
+}

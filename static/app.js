@@ -988,6 +988,8 @@ function switchTab(tabId) {
     const tabCommonProductionMaster = document.getElementById('tab-common-production-master');
     const tabStockWip = document.getElementById('tab-stock-wip');
     const tabBalanceQty = document.getElementById('tab-balance-qty');
+    const tabPendingQtyPlanning = document.getElementById('tab-pending-qty-planning');
+    const tabLeadDaysMaster = document.getElementById('tab-lead-days-master');
 
     const panelOverview = document.getElementById('overview-panel');
     const panelContribution = document.getElementById('contribution-panel');
@@ -1003,6 +1005,8 @@ function switchTab(tabId) {
     const panelCommonProductionMaster = document.getElementById('common-production-master-panel');
     const panelStockWip = document.getElementById('stock-wip-panel');
     const panelBalanceQty = document.getElementById('balance-qty-panel');
+    const panelPendingQtyPlanning = document.getElementById('pending-qty-planning-panel');
+    const panelLeadDaysMaster = document.getElementById('lead-days-master-panel');
 
     // Reset tabs
     tabOverview.classList.remove('active');
@@ -1019,6 +1023,8 @@ function switchTab(tabId) {
     if (tabCommonProductionMaster) tabCommonProductionMaster.classList.remove('active');
     if (tabStockWip) tabStockWip.classList.remove('active');
     if (tabBalanceQty) tabBalanceQty.classList.remove('active');
+    if (tabPendingQtyPlanning) tabPendingQtyPlanning.classList.remove('active');
+    if (tabLeadDaysMaster) tabLeadDaysMaster.classList.remove('active');
 
     panelOverview.classList.add('hidden');
     panelContribution.classList.add('hidden');
@@ -1034,6 +1040,8 @@ function switchTab(tabId) {
     if (panelCommonProductionMaster) panelCommonProductionMaster.classList.add('hidden');
     if (panelStockWip) panelStockWip.classList.add('hidden');
     if (panelBalanceQty) panelBalanceQty.classList.add('hidden');
+    if (panelPendingQtyPlanning) panelPendingQtyPlanning.classList.add('hidden');
+    if (panelLeadDaysMaster) panelLeadDaysMaster.classList.add('hidden');
 
     if (tabId === 'overview') {
         tabOverview.classList.add('active');
@@ -1054,6 +1062,10 @@ function switchTab(tabId) {
         if (tabPlanningQtyDerivation) tabPlanningQtyDerivation.classList.add('active');
         if (panelPlanningQtyDerivation) panelPlanningQtyDerivation.classList.remove('hidden');
         initializePlanningQtyDerivationTab();
+    } else if (tabId === 'pending-qty-planning') {
+        if (tabPendingQtyPlanning) tabPendingQtyPlanning.classList.add('active');
+        if (panelPendingQtyPlanning) panelPendingQtyPlanning.classList.remove('hidden');
+        initializePendingQtyPlanningTab();
     } else if (tabId === 'color-master') {
         if (tabColorMaster) tabColorMaster.classList.add('active');
         if (panelColorMaster) panelColorMaster.classList.remove('hidden');
@@ -1090,6 +1102,10 @@ function switchTab(tabId) {
         if (tabBalanceQty) tabBalanceQty.classList.add('active');
         if (panelBalanceQty) panelBalanceQty.classList.remove('hidden');
         initializeBalanceQtyTab();
+    } else if (tabId === 'lead-days-master') {
+        if (tabLeadDaysMaster) tabLeadDaysMaster.classList.add('active');
+        if (panelLeadDaysMaster) panelLeadDaysMaster.classList.remove('hidden');
+        initLeadDaysMaster();
     }
 }
 
@@ -9127,10 +9143,49 @@ function renderPlanningContribTableBodyOnly() {
         const rowId = getPlanningContribRowId(p, idx);
         const isChecked = selectedPlanningContribRows.has(rowId);
 
+        const actualRowIdx = planningContribData.rows.indexOf(p);
+        const rowIdxForEvents = actualRowIdx !== -1 ? actualRowIdx : idx;
+
+        const curFromMonth = p.from_month || document.getElementById('planning-contrib-common-from-month')?.value || 'April';
+        const curFromYear = p.from_year || parseInt(document.getElementById('planning-contrib-common-from-year')?.value) || 2026;
+        const curToMonth = p.to_month || document.getElementById('planning-contrib-common-to-month')?.value || 'December';
+        const curToYear = p.to_year || parseInt(document.getElementById('planning-contrib-common-to-year')?.value) || 2026;
+        p.from_month = curFromMonth;
+        p.from_year = curFromYear;
+        p.to_month = curToMonth;
+        p.to_year = curToYear;
+
+        const fromMonthOpts = MONTHS_LIST.map(m => `<option value="${m}" ${m === p.from_month ? 'selected' : ''}>${m.substring(0, 3)}</option>`).join('');
+        const fromYearOpts = YEARS_LIST.map(y => `<option value="${y}" ${parseInt(y) === parseInt(p.from_year) ? 'selected' : ''}>${y}</option>`).join('');
+        const toMonthOpts = MONTHS_LIST.map(m => `<option value="${m}" ${m === p.to_month ? 'selected' : ''}>${m.substring(0, 3)}</option>`).join('');
+        const toYearOpts = YEARS_LIST.map(y => `<option value="${y}" ${parseInt(y) === parseInt(p.to_year) ? 'selected' : ''}>${y}</option>`).join('');
+
+        const periodSelectorHtml = `
+            <div style="display: inline-flex; align-items: center; gap: 4px; justify-content: center;">
+                <select class="spreadsheet-select"
+                    onchange="onRowPeriodChange(${rowIdxForEvents}, this.value, 'from_month', this)">
+                    ${fromMonthOpts}
+                </select>
+                <select class="spreadsheet-select"
+                    onchange="onRowPeriodChange(${rowIdxForEvents}, this.value, 'from_year', this)">
+                    ${fromYearOpts}
+                </select>
+                <span style="font-size: 11px; color: var(--text-muted);">-</span>
+                <select class="spreadsheet-select"
+                    onchange="onRowPeriodChange(${rowIdxForEvents}, this.value, 'to_month', this)">
+                    ${toMonthOpts}
+                </select>
+                <select class="spreadsheet-select"
+                    onchange="onRowPeriodChange(${rowIdxForEvents}, this.value, 'to_year', this)">
+                    ${toYearOpts}
+                </select>
+            </div>
+        `;
+
         // Clickable Products Count link
         const salesProdsList = Array.isArray(p.sales_products) ? p.sales_products : [];
         const salesProductsHtml = `
-            <a href="#" onclick="openSalesProductsModalForIndex(${idx}); return false;" style="color: var(--accent-blue); text-decoration: underline; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <a href="#" onclick="openSalesProductsModalForIndex(${rowIdxForEvents}); return false;" style="color: var(--accent-blue); text-decoration: underline; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                 <i class="fa-solid fa-tags" style="font-size: 11px;"></i>
                 <span>${salesProdsList.length} ${salesProdsList.length === 1 ? 'Product' : 'Products'}</span>
             </a>
@@ -9185,13 +9240,14 @@ function renderPlanningContribTableBodyOnly() {
             <td>${index++}</td>
             <td>${headerName}</td>
             <td style="max-width: 280px; overflow-wrap: break-word;">${salesProductsHtml}</td>
+            <td style="text-align: center; white-space: nowrap; padding: 4px 6px;">${periodSelectorHtml}</td>
             <td class="text-right">${p.selected_period_avg_pct.toFixed(2)}%</td>
             <td class="text-right">${p.last_year_same_period_pct.toFixed(2)}%</td>
             <td class="text-right" style="background: rgba(255,255,255,0.01);">${p.suggested_pct.toFixed(2)}%</td>
             <td style="border-left: 2px solid var(--border-color); padding: 2px 4px; background: rgba(58,110,165,0.03);">
                 <input type="number" class="spreadsheet-input-pct" step="0.01" min="0" max="100" 
                     value="${p.manual_pct.toFixed(2)}" 
-                    onchange="onPlanningContribManualPercentChange(${idx}, this.value, this)">
+                    onchange="onPlanningContribManualPercentChange(${rowIdxForEvents}, this.value, this)">
             </td>
             <td class="text-right" style="font-size: 11px; color: var(--text-secondary);">${p.fixed_percentage !== null && p.fixed_percentage !== undefined ? p.fixed_percentage.toFixed(2) + '%' : '<span style="font-size:10px; color:var(--text-muted); font-style:italic;" title="Uncommitted / Draft">Draft / Not Fixed</span>'}</td>
             <td style="text-align: center; font-size: 11px; color: var(--text-secondary);">${p.last_updated ? p.last_updated : '-'}</td>
@@ -10454,7 +10510,7 @@ async function saveDerivationOverrides() {
             let errorMsg = (res && res.message) ? res.message : `Server error (${response.status})`;
             if (response.status === 401) errorMsg = "Session expired. Please log in again.";
             else if (response.status === 403) errorMsg = "Permission denied.";
-            
+
             if (typeof showToast !== 'undefined') {
                 showToast('Error', errorMsg, 'error');
             } else {
@@ -11935,27 +11991,115 @@ document.addEventListener('keydown', function (e) {
 let stockWipActiveTab = 'fabric-stock';
 let stockWipAllData = [];
 let stockWipMode = 'saved'; // 'saved' or 'preview'
-let stockWipSearchQuery = '';
-let stockWipFilterStatus = '';
 let stockWipCurrentPage = 1;
 let stockWipPageSize = 25;
 let stockWipSortColumn = '';
 let stockWipSortOrder = 'asc';
+let stockWipActivePopupCol = null;
+
+// Isolated per-tab state with explicit dataLoaded tracking
+const stockWipTabState = {
+    'fabric-stock': { dataLoaded: false, allRecords: [], filters: {}, distinctValues: {}, page: 1, pageSize: 25 },
+    'fabric-wip': { dataLoaded: false, allRecords: [], filters: {}, distinctValues: {}, page: 1, pageSize: 25 },
+    'production-wip': { dataLoaded: false, allRecords: [], filters: {}, distinctValues: {}, page: 1, pageSize: 25 },
+    'pending-orders': { dataLoaded: false, allRecords: [], filters: {}, distinctValues: {}, page: 1, pageSize: 25 },
+    'finished-goods': { dataLoaded: false, allRecords: [], filters: {}, distinctValues: {}, page: 1, pageSize: 25 }
+};
+
+// Global click handler to close filter popup when clicking outside
+document.addEventListener('click', function (e) {
+    const popup = document.getElementById('stock-wip-filter-popup');
+    if (!popup || popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    if (e.target.closest('.stock-wip-col-filter-btn')) return;
+    closeStockWipFilterPopup();
+});
+
+// Null/undefined-safe zero-value field accessor
+function getStockWipCellValue(row, col) {
+    const primaryVal = row[col.key];
+    if (primaryVal !== undefined && primaryVal !== null) {
+        return primaryVal;
+    }
+    if (col.label && row[col.label] !== undefined && row[col.label] !== null) {
+        return row[col.label];
+    }
+    return '';
+}
+
+function isStockWipNumericCol(colKey) {
+    return ['gsm', 'dia', 'weight_mtr', 'qty', 'weight'].includes(String(colKey).toLowerCase());
+}
+
+function getStockWipColumns(tabName, mode) {
+    let columns = [];
+    if (tabName === 'fabric-stock' || tabName === 'fabric-wip') {
+        columns = [
+            { key: 'fabric_name', label: 'Fabric Name' },
+            { key: 'gsm', label: 'GSM' },
+            { key: 'dia', label: 'DIA' },
+            { key: 'color', label: 'Color' },
+            { key: 'weight_mtr', label: 'Weight' }
+        ];
+    } else if (tabName === 'production-wip') {
+        columns = [
+            { key: 'product_name', label: 'Product Name' },
+            { key: 'color', label: 'Color' },
+            { key: 'size', label: 'Size' },
+            { key: 'production_type', label: 'Production Type' },
+            { key: 'production_group', label: 'Production Group' },
+            { key: 'qty', label: 'Qty' }
+        ];
+    } else { // pending-orders, finished-goods
+        columns = [
+            { key: 'product_name', label: 'Product Name' },
+            { key: 'color', label: 'Color' },
+            { key: 'size', label: 'Size' },
+            { key: 'qty', label: 'Qty' }
+        ];
+    }
+
+    columns.push({ key: 'validation_status', label: 'Validation Status' });
+    columns.push({ key: 'validation_message', label: 'Validation Message' });
+
+    if (mode === 'saved') {
+        columns.push({ key: 'created_by', label: 'Created By' });
+        columns.push({ key: 'created_at', label: 'Created Date' });
+    }
+    return columns;
+}
+
+function populateStockWipDistinctValues(tabName) {
+    const state = stockWipTabState[tabName];
+    if (!state || !state.allRecords) return;
+    state.distinctValues = {};
+
+    const columns = getStockWipColumns(tabName, stockWipMode);
+    columns.forEach(col => {
+        if (!isStockWipNumericCol(col.key)) {
+            const valSet = new Set();
+            state.allRecords.forEach(row => {
+                let val = getStockWipCellValue(row, col);
+                if (col.key === 'created_at' && val) {
+                    try {
+                        const d = new Date(val);
+                        val = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    } catch (e) { }
+                }
+                if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    valSet.add(String(val));
+                }
+            });
+            state.distinctValues[col.key] = Array.from(valSet).sort((a, b) => a.localeCompare(b));
+        }
+    });
+}
 
 async function initializeStockWipTab() {
     stockWipActiveTab = 'fabric-stock';
-    stockWipSearchQuery = '';
-    stockWipFilterStatus = '';
-    stockWipCurrentPage = 1;
     stockWipSortColumn = '';
     stockWipSortOrder = 'asc';
     stockWipMode = 'saved';
-
-    const searchInput = document.getElementById('stock-wip-search');
-    if (searchInput) searchInput.value = '';
-
-    const statusSelect = document.getElementById('stock-wip-filter-status');
-    if (statusSelect) statusSelect.value = '';
 
     updateStockWipSubTabButtons();
     await fetchStockWipSavedData();
@@ -11963,21 +12107,21 @@ async function initializeStockWipTab() {
 
 async function switchStockWipSubTab(tabName) {
     stockWipActiveTab = tabName;
-    stockWipSearchQuery = '';
-    stockWipFilterStatus = '';
-    stockWipCurrentPage = 1;
     stockWipSortColumn = '';
     stockWipSortOrder = 'asc';
     stockWipMode = 'saved';
 
-    const searchInput = document.getElementById('stock-wip-search');
-    if (searchInput) searchInput.value = '';
-
-    const statusSelect = document.getElementById('stock-wip-filter-status');
-    if (statusSelect) statusSelect.value = '';
-
     updateStockWipSubTabButtons();
-    await fetchStockWipSavedData();
+    const state = stockWipTabState[tabName];
+    if (state && state.dataLoaded) {
+        stockWipAllData = state.allRecords;
+        stockWipCurrentPage = state.page || 1;
+        stockWipPageSize = state.pageSize || 25;
+        updateStockWipModeBadge();
+        renderStockWipGrid();
+    } else {
+        await fetchStockWipSavedData();
+    }
 }
 
 function updateStockWipSubTabButtons() {
@@ -12014,6 +12158,15 @@ async function fetchStockWipSavedData() {
         if (response.ok && result.success) {
             stockWipAllData = result.data || [];
             stockWipMode = 'saved';
+
+            const state = stockWipTabState[stockWipActiveTab];
+            if (state) {
+                state.allRecords = stockWipAllData;
+                state.dataLoaded = true;
+                state.page = 1;
+                populateStockWipDistinctValues(stockWipActiveTab);
+            }
+
             updateStockWipModeBadge();
             renderStockWipGrid();
         } else {
@@ -12052,7 +12205,6 @@ async function downloadStockWipTemplate() {
     let exampleGsm = 185;
     let exampleDia = 30;
 
-    // Attempt to pull real values from active masters dynamically for higher template validity
     try {
         const fabResp = await fetch('/api/masters/fabrics?status=Active');
         const fabData = await fabResp.json();
@@ -12108,7 +12260,7 @@ async function downloadStockWipTemplate() {
             'Production Group': 'Group A',
             'Qty': 500
         };
-    } else { // pending-orders, finished-goods
+    } else {
         headers = ['Product Name', 'Color', 'Size', 'Qty'];
         exampleRow = {
             'Product Name': exampleProduct,
@@ -12142,54 +12294,28 @@ function importStockWipExcel(event) {
             const rows = XLSX.utils.sheet_to_json(worksheet);
 
             if (rows.length === 0) {
-                alert("No data rows found in the Excel file.");
+                alert("Excel sheet is empty.");
                 return;
             }
 
-            const parsedRows = [];
-            rows.forEach(r => {
-                let parsedRow = {};
-                if (stockWipActiveTab === 'fabric-stock' || stockWipActiveTab === 'fabric-wip') {
-                    parsedRow = {
-                        'Fabric Name': r['Fabric Name'] || r['fabric_name'] || r['Fabric'] || r['fabric'] || '',
-                        'GSM': r['GSM'] || r['gsm'] || '',
-                        'DIA': r['DIA'] || r['dia'] || '',
-                        'Color': r['Color'] || r['color'] || '',
-                        'Weight': r['Weight'] || r['weight_mtr'] || r['weight'] || ''
-                    };
-                } else if (stockWipActiveTab === 'production-wip') {
-                    parsedRow = {
-                        'Product Name': r['Product Name'] || r['product_name'] || r['Product'] || r['product'] || '',
-                        'Color': r['Color'] || r['color'] || '',
-                        'Size': r['Size'] || r['size'] || '',
-                        'Production Type': r['Production Type'] || r['production_type'] || 'Common',
-                        'Production Group': r['Production Group'] || r['production_group'] || 'Group A',
-                        'Qty': r['Qty'] || r['qty'] || r['Quantity'] || r['quantity'] || ''
-                    };
-                } else { // pending-orders, finished-goods
-                    parsedRow = {
-                        'Product Name': r['Product Name'] || r['product_name'] || r['Product'] || r['product'] || '',
-                        'Color': r['Color'] || r['color'] || '',
-                        'Size': r['Size'] || r['size'] || '',
-                        'Qty': r['Qty'] || r['qty'] || r['Quantity'] || r['quantity'] || ''
-                    };
-                }
-
-                parsedRow.validation_status = '';
-                parsedRow.validation_message = '';
-                parsedRows.push(parsedRow);
-            });
-
-            stockWipAllData = parsedRows;
+            stockWipAllData = rows;
             stockWipMode = 'preview';
-            stockWipCurrentPage = 1;
 
+            const state = stockWipTabState[stockWipActiveTab];
+            if (state) {
+                state.allRecords = rows;
+                state.dataLoaded = true;
+                state.page = 1;
+                populateStockWipDistinctValues(stockWipActiveTab);
+            }
+
+            stockWipCurrentPage = 1;
             updateStockWipModeBadge();
             renderStockWipGrid();
-            alert(`Excel file imported successfully! ${parsedRows.length} rows loaded. Click Validate to proceed.`);
+            alert(`Loaded ${rows.length} rows for preview. Please click 'Validate' to check data.`);
         } catch (err) {
-            console.error("Error reading Excel stock/wip:", err);
-            alert("Invalid Excel file format or parse failure.");
+            console.error("Error parsing Excel:", err);
+            alert("Failed to parse Excel file. Please ensure it matches the template format.");
         } finally {
             document.getElementById('stock-wip-import-file').value = '';
         }
@@ -12217,9 +12343,14 @@ async function validateStockWipData() {
         const result = await response.json();
         if (response.ok && result.success) {
             stockWipAllData = result.rows || [];
+            const state = stockWipTabState[stockWipActiveTab];
+            if (state) {
+                state.allRecords = stockWipAllData;
+                populateStockWipDistinctValues(stockWipActiveTab);
+            }
             renderStockWipGrid();
 
-            const invalidCount = stockWipAllData.filter(r => r.validation_status === 'INVALID').length;
+            const invalidCount = stockWipAllData.filter(r => r.validation_status === 'INVALID' || r['Validation Status'] === 'INVALID').length;
             if (invalidCount === 0) {
                 alert("Validation complete! All rows are VALID.");
             } else {
@@ -12242,13 +12373,13 @@ async function saveStockWipData() {
         return;
     }
 
-    const unvalidated = stockWipAllData.some(r => !r.validation_status);
+    const unvalidated = stockWipAllData.some(r => !r.validation_status && !r['Validation Status']);
     if (unvalidated) {
         alert("Please validate the records before saving.");
         return;
     }
 
-    const validRows = stockWipAllData.filter(r => r.validation_status === 'VALID');
+    const validRows = stockWipAllData.filter(r => r.validation_status === 'VALID' || r['Validation Status'] === 'VALID');
     if (validRows.length === 0) {
         alert("No valid rows found to save. All rows are invalid or duplicate.");
         return;
@@ -12269,6 +12400,12 @@ async function saveStockWipData() {
         if (response.ok && result.success) {
             const savedCount = result.saved_count || 0;
             stockWipAllData = result.remaining_rows || [];
+
+            const state = stockWipTabState[stockWipActiveTab];
+            if (state) {
+                state.allRecords = stockWipAllData;
+                populateStockWipDistinctValues(stockWipActiveTab);
+            }
 
             if (stockWipAllData.length === 0) {
                 alert(`Successfully saved all ${savedCount} records!`);
@@ -12300,9 +12437,9 @@ function exportStockWipData(type) {
     if (type === 'all') {
         filtered = stockWipAllData;
     } else if (type === 'valid') {
-        filtered = stockWipAllData.filter(r => r.validation_status === 'VALID');
+        filtered = stockWipAllData.filter(r => r.validation_status === 'VALID' || r['Validation Status'] === 'VALID');
     } else if (type === 'invalid') {
-        filtered = stockWipAllData.filter(r => r.validation_status === 'INVALID');
+        filtered = stockWipAllData.filter(r => r.validation_status === 'INVALID' || r['Validation Status'] === 'INVALID');
     }
 
     if (filtered.length === 0) {
@@ -12329,7 +12466,7 @@ function exportStockWipData(type) {
                 'Production Group': r['Production Group'] || r['production_group'] || '',
                 'Qty': r['Qty'] || r['qty'] || ''
             };
-        } else { // pending-orders, finished-goods
+        } else {
             rowData = {
                 'Product Name': r['Product Name'] || r['product_name'] || '',
                 'Color': r['Color'] || r['color'] || '',
@@ -12338,8 +12475,8 @@ function exportStockWipData(type) {
             };
         }
 
-        rowData['Validation Status'] = r.validation_status || 'UNVALIDATED';
-        rowData['Validation Message'] = r.validation_message || '';
+        rowData['Validation Status'] = r.validation_status || r['Validation Status'] || 'UNVALIDATED';
+        rowData['Validation Message'] = r.validation_message || r['Validation Message'] || '';
         return rowData;
     });
 
@@ -12353,16 +12490,17 @@ function clearStockWipPreview() {
     stockWipAllData = [];
     stockWipMode = 'preview';
     stockWipCurrentPage = 1;
+
+    const state = stockWipTabState[stockWipActiveTab];
+    if (state) {
+        state.allRecords = [];
+        state.filters = {};
+        state.page = 1;
+    }
+
     updateStockWipModeBadge();
     renderStockWipGrid();
     alert("Preview grid cleared.");
-}
-
-function onStockWipSearchFilter() {
-    stockWipSearchQuery = document.getElementById('stock-wip-search')?.value.toLowerCase().trim() || '';
-    stockWipFilterStatus = document.getElementById('stock-wip-filter-status')?.value || '';
-    stockWipCurrentPage = 1;
-    renderStockWipGrid();
 }
 
 function onStockWipPageSizeChange() {
@@ -12370,6 +12508,11 @@ function onStockWipPageSizeChange() {
     if (sizeSelect) {
         stockWipPageSize = parseInt(sizeSelect.value);
         stockWipCurrentPage = 1;
+        const state = stockWipTabState[stockWipActiveTab];
+        if (state) {
+            state.pageSize = stockWipPageSize;
+            state.page = 1;
+        }
         renderStockWipGrid();
     }
 }
@@ -12384,118 +12527,352 @@ function toggleStockWipSort(column) {
     renderStockWipGrid();
 }
 
-function renderStockWipGrid() {
-    // 1. Filter data
-    let filteredData = stockWipAllData.filter(r => {
-        // Status filter
-        if (stockWipFilterStatus && r.validation_status !== stockWipFilterStatus) {
-            return false;
-        }
+function openStockWipFilter(colKey, event) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    stockWipActivePopupCol = colKey;
 
-        // Search query filter
-        if (stockWipSearchQuery) {
-            const matchesSearch = Object.values(r).some(val =>
-                String(val).toLowerCase().includes(stockWipSearchQuery)
-            );
-            if (!matchesSearch) return false;
-        }
+    const popup = document.getElementById('stock-wip-filter-popup');
+    const titleSpan = document.getElementById('stock-wip-popup-col-title');
+    const catSection = document.getElementById('stock-wip-popup-categorical-section');
+    const numSection = document.getElementById('stock-wip-popup-numeric-section');
+    const btn = event ? event.currentTarget : document.getElementById(`stock-wip-filter-btn-${colKey}`);
 
-        return true;
+    const columns = getStockWipColumns(stockWipActiveTab, stockWipMode);
+    const colDef = columns.find(c => c.key === colKey) || { label: colKey };
+
+    if (titleSpan) titleSpan.textContent = `${colDef.label} Filter`;
+
+    if (isStockWipNumericCol(colKey)) {
+        if (catSection) catSection.classList.add('hidden');
+        if (numSection) numSection.classList.remove('hidden');
+        renderStockWipNumericFilterUI(colKey);
+    } else {
+        if (numSection) numSection.classList.add('hidden');
+        if (catSection) catSection.classList.remove('hidden');
+        const searchInput = document.getElementById('stock-wip-popup-search');
+        if (searchInput) searchInput.value = '';
+        renderStockWipFilterCheckboxes(colKey, '');
+    }
+
+    if (popup && btn) {
+        popup.classList.remove('hidden');
+        const rect = btn.getBoundingClientRect();
+        popup.style.position = 'fixed';
+        popup.style.zIndex = '99999';
+        popup.style.top = `${rect.bottom + 4}px`;
+        let leftPos = rect.left - 100;
+        if (leftPos < 10) leftPos = 10;
+        if (leftPos + 250 > window.innerWidth) leftPos = window.innerWidth - 260;
+        popup.style.left = `${leftPos}px`;
+        if (!isStockWipNumericCol(colKey)) {
+            const searchInput = document.getElementById('stock-wip-popup-search');
+            if (searchInput) setTimeout(() => searchInput.focus(), 50);
+        }
+    }
+}
+
+function closeStockWipFilterPopup() {
+    const popup = document.getElementById('stock-wip-filter-popup');
+    if (popup) popup.classList.add('hidden');
+    stockWipActivePopupCol = null;
+}
+
+function renderStockWipFilterCheckboxes(colKey, searchFilter) {
+    const listContainer = document.getElementById('stock-wip-popup-checkbox-list');
+    if (!listContainer) return;
+
+    const state = stockWipTabState[stockWipActiveTab];
+    const values = (state && state.distinctValues && state.distinctValues[colKey]) || [];
+    const activeSet = state && state.filters && state.filters[colKey];
+    const term = (searchFilter || '').toLowerCase().trim();
+
+    let html = '';
+    let matchCount = 0;
+
+    values.forEach((val, idx) => {
+        if (term && !String(val).toLowerCase().includes(term)) return;
+        matchCount++;
+        const isChecked = (!activeSet || activeSet.size === 0) || activeSet.has(val);
+        const itemId = `stock-wip-chk-${colKey}-${idx}`;
+        html += `
+            <label class="stock-wip-filter-checkbox-item" for="${itemId}">
+                <input type="checkbox" id="${itemId}" value="${escapeHtml(val)}" ${isChecked ? 'checked' : ''}>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(val)}</span>
+            </label>
+        `;
     });
 
-    // 2. Sort data
-    if (stockWipSortColumn) {
-        filteredData.sort((a, b) => {
-            let valA = a[stockWipSortColumn];
-            let valB = b[stockWipSortColumn];
+    if (matchCount === 0) {
+        html = `<div style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px 0;">No matching options</div>`;
+    }
 
-            // Normalize values for sorting
-            if (valA === undefined || valA === null) valA = '';
-            if (valB === undefined || valB === null) valB = '';
+    listContainer.innerHTML = html;
+}
 
-            if (!isNaN(valA) && !isNaN(valB)) {
-                valA = Number(valA);
-                valB = Number(valB);
-            } else {
-                valA = String(valA).toLowerCase();
-                valB = String(valB).toLowerCase();
+function onStockWipFilterSearchInput(val) {
+    if (!stockWipActivePopupCol) return;
+    renderStockWipFilterCheckboxes(stockWipActivePopupCol, val);
+}
+
+function stockWipFilterSelectAll(selectAll) {
+    const checkboxes = document.querySelectorAll('#stock-wip-popup-checkbox-list input[type="checkbox"]');
+    checkboxes.forEach(chk => { chk.checked = selectAll; });
+}
+
+function renderStockWipNumericFilterUI(colKey) {
+    const state = stockWipTabState[stockWipActiveTab];
+    const numFilter = (state && state.filters && state.filters[colKey]) || {};
+    const opSelect = document.getElementById('stock-wip-popup-num-operator');
+    const val1Input = document.getElementById('stock-wip-popup-num-val1');
+    const val2Input = document.getElementById('stock-wip-popup-num-val2');
+    const val2Wrap = document.getElementById('stock-wip-popup-num-val2-wrap');
+
+    const op = numFilter.operator || 'gte';
+    if (opSelect) opSelect.value = op;
+    if (val1Input) val1Input.value = numFilter.val1 !== undefined && numFilter.val1 !== null ? numFilter.val1 : '';
+    if (val2Input) val2Input.value = numFilter.val2 !== undefined && numFilter.val2 !== null ? numFilter.val2 : '';
+
+    if (val2Wrap) {
+        if (op === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function onStockWipNumericOperatorChange(val) {
+    const val2Wrap = document.getElementById('stock-wip-popup-num-val2-wrap');
+    if (val2Wrap) {
+        if (val === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function applyStockWipFilterCurrent() {
+    const colKey = stockWipActivePopupCol;
+    if (!colKey) return;
+    const state = stockWipTabState[stockWipActiveTab];
+    if (!state) return;
+
+    if (isStockWipNumericCol(colKey)) {
+        const op = document.getElementById('stock-wip-popup-num-operator')?.value || 'gte';
+        const v1Raw = document.getElementById('stock-wip-popup-num-val1')?.value;
+        const v2Raw = document.getElementById('stock-wip-popup-num-val2')?.value;
+
+        if (v1Raw === '' || v1Raw === undefined || v1Raw === null) {
+            delete state.filters[colKey];
+        } else {
+            state.filters[colKey] = {
+                operator: op,
+                val1: Number(v1Raw),
+                val2: (op === 'between' && v2Raw !== '') ? Number(v2Raw) : null
+            };
+        }
+    } else {
+        const checkboxes = document.querySelectorAll('#stock-wip-popup-checkbox-list input[type="checkbox"]');
+        const checkedValues = new Set();
+        checkboxes.forEach(chk => {
+            if (chk.checked) checkedValues.add(chk.value);
+        });
+
+        const totalValues = (state.distinctValues && state.distinctValues[colKey]) || [];
+        if (checkedValues.size === totalValues.length || checkedValues.size === 0) {
+            delete state.filters[colKey];
+        } else {
+            state.filters[colKey] = checkedValues;
+        }
+    }
+
+    updateStockWipFilterBtnVisualState(colKey);
+    closeStockWipFilterPopup();
+    state.page = 1;
+    stockWipCurrentPage = 1;
+    renderStockWipGrid();
+}
+
+function clearStockWipFilterCurrent() {
+    const colKey = stockWipActivePopupCol;
+    if (!colKey) return;
+    const state = stockWipTabState[stockWipActiveTab];
+    if (!state) return;
+
+    delete state.filters[colKey];
+    updateStockWipFilterBtnVisualState(colKey);
+    closeStockWipFilterPopup();
+    state.page = 1;
+    stockWipCurrentPage = 1;
+    renderStockWipGrid();
+}
+
+function clearAllStockWipFilters() {
+    const state = stockWipTabState[stockWipActiveTab];
+    if (!state) return;
+
+    state.filters = {};
+    const columns = getStockWipColumns(stockWipActiveTab, stockWipMode);
+    columns.forEach(c => updateStockWipFilterBtnVisualState(c.key));
+
+    closeStockWipFilterPopup();
+    state.page = 1;
+    stockWipCurrentPage = 1;
+    renderStockWipGrid();
+}
+
+function updateStockWipFilterBtnVisualState(colKey) {
+    const btn = document.getElementById(`stock-wip-filter-btn-${colKey}`);
+    const state = stockWipTabState[stockWipActiveTab];
+    const filter = state && state.filters && state.filters[colKey];
+
+    let isFiltered = false;
+    if (filter) {
+        if (isStockWipNumericCol(colKey)) {
+            isFiltered = filter.val1 !== undefined && filter.val1 !== null;
+        } else if (filter instanceof Set) {
+            isFiltered = filter.size > 0;
+        }
+    }
+
+    if (btn) {
+        if (isFiltered) {
+            btn.classList.add('active');
+            btn.innerHTML = `<i class="fa-solid fa-filter-circle-xmark"></i>`;
+        } else {
+            btn.classList.remove('active');
+            btn.innerHTML = `<i class="fa-solid fa-filter"></i>`;
+        }
+    }
+
+    let anyActive = false;
+    if (state && state.filters) {
+        Object.keys(state.filters).forEach(k => {
+            const f = state.filters[k];
+            if (f) {
+                if (isStockWipNumericCol(k) && f.val1 !== undefined && f.val1 !== null) anyActive = true;
+                else if (f instanceof Set && f.size > 0) anyActive = true;
             }
-
-            if (valA < valB) return stockWipSortOrder === 'asc' ? -1 : 1;
-            if (valA > valB) return stockWipSortOrder === 'asc' ? 1 : -1;
-            return 0;
         });
     }
 
-    // 3. Update KPI cards
-    document.getElementById('stock-wip-kpi-total').textContent = stockWipAllData.length;
-    document.getElementById('stock-wip-kpi-valid').textContent = stockWipAllData.filter(r => r.validation_status === 'VALID').length;
-    document.getElementById('stock-wip-kpi-invalid').textContent = stockWipAllData.filter(r => r.validation_status === 'INVALID').length;
-    document.getElementById('stock-wip-kpi-duplicate').textContent = stockWipAllData.filter(r => r.validation_message === 'Duplicate Row').length;
+    const clearAllBtn = document.getElementById('stock-wip-clear-all-filters-btn');
+    if (clearAllBtn) {
+        if (anyActive) clearAllBtn.classList.remove('hidden');
+        else clearAllBtn.classList.add('hidden');
+    }
+}
 
-    // 4. Pagination math
+function getFilteredStockWipData() {
+    const state = stockWipTabState[stockWipActiveTab];
+    if (!state || !state.allRecords) return stockWipAllData || [];
+
+    const activeFilters = state.filters || {};
+    const columns = getStockWipColumns(stockWipActiveTab, stockWipMode);
+
+    return state.allRecords.filter(row => {
+        for (const col of columns) {
+            const filter = activeFilters[col.key];
+            if (!filter) continue;
+
+            const rawVal = getStockWipCellValue(row, col);
+
+            if (isStockWipNumericCol(col.key)) {
+                const num = Number(rawVal);
+                if (isNaN(num) || rawVal === '' || rawVal === null || rawVal === undefined) return false;
+                const op = filter.operator;
+                const v1 = filter.val1;
+                const v2 = filter.val2;
+
+                if (op === 'eq' && num !== v1) return false;
+                if (op === 'neq' && num === v1) return false;
+                if (op === 'gt' && num <= v1) return false;
+                if (op === 'gte' && num < v1) return false;
+                if (op === 'lt' && num >= v1) return false;
+                if (op === 'lte' && num > v1) return false;
+                if (op === 'between') {
+                    if (v1 !== null && v1 !== undefined && num < v1) return false;
+                    if (v2 !== null && v2 !== undefined && num > v2) return false;
+                }
+            } else {
+                if (filter instanceof Set && filter.size > 0) {
+                    let displayVal = rawVal;
+                    if (col.key === 'created_at' && displayVal) {
+                        try {
+                            const d = new Date(displayVal);
+                            displayVal = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        } catch (e) { }
+                    }
+                    if (!filter.has(String(displayVal))) return false;
+                }
+            }
+        }
+        return true;
+    });
+}
+
+function renderStockWipGrid() {
+    const state = stockWipTabState[stockWipActiveTab] || {
+        allRecords: stockWipAllData,
+        filters: {},
+        distinctValues: {},
+        page: stockWipCurrentPage,
+        pageSize: stockWipPageSize
+    };
+
+    let filteredData = getFilteredStockWipData();
+
+    if (stockWipSortColumn) {
+        const columns = getStockWipColumns(stockWipActiveTab, stockWipMode);
+        const colDef = columns.find(c => c.key === stockWipSortColumn) || { key: stockWipSortColumn };
+
+        filteredData.sort((a, b) => {
+            let valA = getStockWipCellValue(a, colDef);
+            let valB = getStockWipCellValue(b, colDef);
+
+            if (isStockWipNumericCol(stockWipSortColumn)) {
+                valA = Number(valA) || 0;
+                valB = Number(valB) || 0;
+                return stockWipSortOrder === 'asc' ? valA - valB : valB - valA;
+            } else {
+                valA = String(valA || '').toLowerCase();
+                valB = String(valB || '').toLowerCase();
+                if (valA < valB) return stockWipSortOrder === 'asc' ? -1 : 1;
+                if (valA > valB) return stockWipSortOrder === 'asc' ? 1 : -1;
+                return 0;
+            }
+        });
+    }
+
+    const allRecords = state.allRecords || stockWipAllData;
+    document.getElementById('stock-wip-kpi-total').textContent = allRecords.length;
+    document.getElementById('stock-wip-kpi-valid').textContent = allRecords.filter(r => r.validation_status === 'VALID' || r['Validation Status'] === 'VALID').length;
+    document.getElementById('stock-wip-kpi-invalid').textContent = allRecords.filter(r => r.validation_status === 'INVALID' || r['Validation Status'] === 'INVALID').length;
+    document.getElementById('stock-wip-kpi-duplicate').textContent = allRecords.filter(r => r.validation_message === 'Duplicate Row' || r['Validation Message'] === 'Duplicate Row').length;
+
     const totalItems = filteredData.length;
     document.getElementById('stock-wip-total-items').textContent = totalItems;
 
-    const totalPages = Math.max(1, Math.ceil(totalItems / stockWipPageSize));
+    const pageSize = state.pageSize || stockWipPageSize;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
     if (stockWipCurrentPage > totalPages) stockWipCurrentPage = totalPages;
+    state.page = stockWipCurrentPage;
 
-    const pageStart = totalItems === 0 ? 0 : (stockWipCurrentPage - 1) * stockWipPageSize + 1;
-    const pageEnd = Math.min(stockWipCurrentPage * stockWipPageSize, totalItems);
+    const pageStart = totalItems === 0 ? 0 : (stockWipCurrentPage - 1) * pageSize + 1;
+    const pageEnd = Math.min(stockWipCurrentPage * pageSize, totalItems);
 
     document.getElementById('stock-wip-page-start').textContent = pageStart;
     document.getElementById('stock-wip-page-end').textContent = pageEnd;
 
-    // Slice items for current page
     const pageData = filteredData.slice(pageStart - 1, pageEnd);
 
-    // 5. Render headers and rows
     const thead = document.getElementById('stock-wip-thead');
     const tbody = document.getElementById('stock-wip-tbody');
 
     thead.innerHTML = '';
     tbody.innerHTML = '';
 
-    let columns = [];
-    if (stockWipActiveTab === 'fabric-stock' || stockWipActiveTab === 'fabric-wip') {
-        columns = [
-            { key: 'fabric_name', label: 'Fabric Name' },
-            { key: 'gsm', label: 'GSM' },
-            { key: 'dia', label: 'DIA' },
-            { key: 'color', label: 'Color' },
-            { key: 'weight_mtr', label: 'Weight' }
-        ];
-    } else if (stockWipActiveTab === 'production-wip') {
-        columns = [
-            { key: 'product_name', label: 'Product Name' },
-            { key: 'color', label: 'Color' },
-            { key: 'size', label: 'Size' },
-            { key: 'production_type', label: 'Production Type' },
-            { key: 'production_group', label: 'Production Group' },
-            { key: 'qty', label: 'Qty' }
-        ];
-    } else { // pending-orders, finished-goods
-        columns = [
-            { key: 'product_name', label: 'Product Name' },
-            { key: 'color', label: 'Color' },
-            { key: 'size', label: 'Size' },
-            { key: 'qty', label: 'Qty' }
-        ];
-    }
+    const columns = getStockWipColumns(stockWipActiveTab, stockWipMode);
 
-    // Add validation cols
-    columns.push({ key: 'validation_status', label: 'Validation Status' });
-    columns.push({ key: 'validation_message', label: 'Validation Message' });
-
-    if (stockWipMode === 'saved') {
-        columns.push({ key: 'created_by', label: 'Created By' });
-        columns.push({ key: 'created_at', label: 'Created Date' });
-    }
-
-    // Render thead
     const headerRow = document.createElement('tr');
-
-    // Index column th
     const indexTh = document.createElement('th');
     indexTh.style.width = '50px';
     indexTh.style.textAlign = 'center';
@@ -12506,18 +12883,35 @@ function renderStockWipGrid() {
         const th = document.createElement('th');
         th.style.cursor = 'pointer';
 
-        // Header text + sort indicator
         const isSorted = stockWipSortColumn === col.key;
         const iconClass = isSorted ? (stockWipSortOrder === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort';
-        th.innerHTML = `${col.label} <i class="fa-solid ${iconClass}" style="margin-left: 6px; font-size: 11px; opacity: ${isSorted ? 1 : 0.4};"></i>`;
 
-        // Sorting click listener
-        th.addEventListener('click', (e) => {
-            if (e.target.classList.contains('resizer')) return;
+        const filter = state.filters && state.filters[col.key];
+        let isFiltered = false;
+        if (filter) {
+            if (isStockWipNumericCol(col.key)) {
+                isFiltered = filter.val1 !== undefined && filter.val1 !== null;
+            } else if (filter instanceof Set) {
+                isFiltered = filter.size > 0;
+            }
+        }
+
+        th.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                <span class="stock-wip-th-label" style="display: inline-flex; align-items: center; gap: 4px; flex-grow: 1;">
+                    ${col.label}
+                    <i class="fa-solid ${iconClass}" style="font-size: 10px; opacity: ${isSorted ? 1 : 0.35};"></i>
+                </span>
+                <button id="stock-wip-filter-btn-${col.key}" class="stock-wip-col-filter-btn ${isFiltered ? 'active' : ''}" onclick="openStockWipFilter('${col.key}', event)" title="Filter by ${col.label}">
+                    <i class="fa-solid ${isFiltered ? 'fa-filter-circle-xmark' : 'fa-filter'}"></i>
+                </button>
+            </div>
+        `;
+
+        th.querySelector('.stock-wip-th-label')?.addEventListener('click', (e) => {
             toggleStockWipSort(col.key);
         });
 
-        // Column resizer handle
         const resizer = document.createElement('div');
         resizer.className = 'resizer';
         th.appendChild(resizer);
@@ -12527,7 +12921,6 @@ function renderStockWipGrid() {
 
     thead.appendChild(headerRow);
 
-    // Render tbody
     if (pageData.length === 0) {
         const emptyRow = document.createElement('tr');
         const emptyTd = document.createElement('td');
@@ -12535,29 +12928,26 @@ function renderStockWipGrid() {
         emptyTd.style.textAlign = 'center';
         emptyTd.style.padding = '32px 16px';
         emptyTd.style.color = 'var(--text-muted)';
-        emptyTd.textContent = 'No records found.';
+        emptyTd.textContent = totalItems === 0 && allRecords.length > 0 ? 'No records match the active filter criteria.' : 'No records found.';
         emptyRow.appendChild(emptyTd);
         tbody.appendChild(emptyRow);
     } else {
         pageData.forEach((row, rowIndex) => {
             const tr = document.createElement('tr');
 
-            // Row number td
             const indexTd = document.createElement('td');
             indexTd.style.textAlign = 'center';
             indexTd.style.color = 'var(--text-secondary)';
             indexTd.textContent = pageStart + rowIndex;
             tr.appendChild(indexTd);
 
-            // Validation status and message values
-            const status = row.validation_status || '';
-            const msg = row.validation_message || '';
+            const status = row.validation_status || row['Validation Status'] || '';
+            const msg = row.validation_message || row['Validation Message'] || '';
 
             columns.forEach(col => {
                 const td = document.createElement('td');
-                let cellVal = row[col.key] || row[col.label] || '';
+                let cellVal = getStockWipCellValue(row, col);
 
-                // Format decimal dates or decimals
                 if (col.key === 'created_at' && cellVal) {
                     try {
                         const d = new Date(cellVal);
@@ -12565,12 +12955,11 @@ function renderStockWipGrid() {
                     } catch (e) { }
                 }
 
-                // Render cells & highlight invalid cells
                 if (status === 'INVALID' || status === 'Duplicate Row' || msg === 'Duplicate Row') {
                     let cellIsInvalid = false;
 
                     if (msg === 'Duplicate Row' || status === 'Duplicate Row') {
-                        cellIsInvalid = true; // highlight whole row
+                        cellIsInvalid = true;
                     } else if (col.key === 'fabric_name' && (msg.includes('Fabric Not Found') || msg.includes('Fabric Name'))) {
                         cellIsInvalid = true;
                     } else if (col.key === 'product_name' && (msg.includes('Product Not Found') || msg.includes('Product Name'))) {
@@ -12631,10 +13020,23 @@ function renderStockWipGrid() {
         });
     }
 
-    // Render pagination footer buttons
-    renderStockWipPagination(totalPages);
+    let anyActive = false;
+    if (state && state.filters) {
+        Object.keys(state.filters).forEach(k => {
+            const f = state.filters[k];
+            if (f) {
+                if (isStockWipNumericCol(k) && f.val1 !== undefined && f.val1 !== null) anyActive = true;
+                else if (f instanceof Set && f.size > 0) anyActive = true;
+            }
+        });
+    }
+    const clearAllBtn = document.getElementById('stock-wip-clear-all-filters-btn');
+    if (clearAllBtn) {
+        if (anyActive) clearAllBtn.classList.remove('hidden');
+        else clearAllBtn.classList.add('hidden');
+    }
 
-    // Apply column resizing capability
+    renderStockWipPagination(totalPages);
     makeColumnsResizable();
 }
 
@@ -12643,7 +13045,6 @@ function renderStockWipPagination(totalPages) {
     if (!container) return;
     container.innerHTML = '';
 
-    // Prev Button
     const prevBtn = document.createElement('button');
     prevBtn.className = 'btn btn-outline btn-xs';
     prevBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
@@ -12656,7 +13057,6 @@ function renderStockWipPagination(totalPages) {
     });
     container.appendChild(prevBtn);
 
-    // Smart page numbers (show max 5 pages centered around current)
     const range = 2;
     let startPage = Math.max(1, stockWipCurrentPage - range);
     let endPage = Math.min(totalPages, stockWipCurrentPage + range);
@@ -12679,7 +13079,6 @@ function renderStockWipPagination(totalPages) {
         container.appendChild(pageBtn);
     }
 
-    // Next Button
     const nextBtn = document.createElement('button');
     nextBtn.className = 'btn btn-outline btn-xs';
     nextBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
@@ -12738,6 +13137,61 @@ let balanceQtyFilteredData = [];
 let balanceQtyFabricAllData = [];
 let balanceQtyFabricFilteredData = [];
 let balanceQtyFabricTotals = { fabric_req: 0, fabric_stock: 0, fabric_wip: 0, bal_required_fab: 0 };
+let balanceQtyConsider = { fg: true, wip: true, pending: true };
+
+function toggleBalanceQtyConsiderDropdown(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('balance-qty-consider-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('hidden');
+    }
+}
+
+function onBalanceQtyConsiderChange() {
+    const fgCheck = document.getElementById('consider-fg-stock');
+    const wipCheck = document.getElementById('consider-wip-qty');
+    const pendingCheck = document.getElementById('consider-pending-qty');
+
+    balanceQtyConsider.fg = fgCheck ? fgCheck.checked : true;
+    balanceQtyConsider.wip = wipCheck ? wipCheck.checked : true;
+    balanceQtyConsider.pending = pendingCheck ? pendingCheck.checked : true;
+
+    updateBalanceQtyConsiderSummary();
+    loadBalanceQtyData(1);
+}
+
+function updateBalanceQtyConsiderSummary() {
+    const summaryEl = document.getElementById('balance-qty-consider-summary');
+    if (!summaryEl) return;
+
+    const selected = [];
+    if (balanceQtyConsider.fg) selected.push('FG');
+    if (balanceQtyConsider.wip) selected.push('WIP');
+    if (balanceQtyConsider.pending) selected.push('Pending');
+
+    if (selected.length === 3) {
+        summaryEl.textContent = 'All Selected (3)';
+    } else if (selected.length === 0) {
+        summaryEl.textContent = 'None Selected (0)';
+    } else {
+        summaryEl.textContent = selected.join(', ');
+    }
+}
+
+function getBalanceQtyConsiderParams() {
+    return `&consider_fg=${balanceQtyConsider.fg}&consider_wip=${balanceQtyConsider.wip}&consider_pending=${balanceQtyConsider.pending}`;
+}
+
+// Close consider dropdown when clicking outside
+document.addEventListener('click', function (e) {
+    const dropdown = document.getElementById('balance-qty-consider-dropdown');
+    const btn = document.getElementById('balance-qty-consider-btn');
+    if (dropdown && !dropdown.classList.contains('hidden')) {
+        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
 
 async function initializeBalanceQtyTab() {
     const planSelect = document.getElementById('balance-qty-plan-select');
@@ -12954,7 +13408,7 @@ async function loadBalanceQtyData(page = 1, forceRecalculate = false) {
     // Always fetch ALL matching rows for the current top level filter set using all=true
     const isFabric = balanceQtyActiveTab === 'fabric';
     const endpoint = isFabric ? '/api/fabric-req/data' : '/api/balance-qty/data';
-    let url = `${endpoint}?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&all=true&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&_=${Date.now()}`;
+    let url = `${endpoint}?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&all=true&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&consider_fg=${balanceQtyConsider.fg}&consider_wip=${balanceQtyConsider.wip}&consider_pending=${balanceQtyConsider.pending}&_=${Date.now()}`;
 
     if (!isFabric) {
         url += `&tab=${balanceQtyActiveTab}`;
@@ -13016,6 +13470,9 @@ function getFabricDetailUrl(fabricName) {
     if (category) params.set('category', category);
     if (product) params.set('product', product);
     if (search) params.set('search', search);
+    params.set('consider_fg', balanceQtyConsider.fg);
+    params.set('consider_wip', balanceQtyConsider.wip);
+    params.set('consider_pending', balanceQtyConsider.pending);
 
     return `/fabric-requirement-detail?${params.toString()}`;
 }
@@ -13674,7 +14131,7 @@ async function toggleFabricReqDetails(fabricName, color, dia, triggerBtn) {
     const product = document.getElementById('balance-qty-product-filter').value;
     const search = document.getElementById('balance-qty-search').value;
 
-    let url = `/api/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&target_fabric_name=${encodeURIComponent(fabricName)}&target_color=${encodeURIComponent(color)}&target_dia=${encodeURIComponent(dia)}`;
+    let url = `/api/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&target_fabric_name=${encodeURIComponent(fabricName)}&target_color=${encodeURIComponent(color)}&target_dia=${encodeURIComponent(dia)}&consider_fg=${balanceQtyConsider.fg}&consider_wip=${balanceQtyConsider.wip}&consider_pending=${balanceQtyConsider.pending}`;
 
     if (brand) url += `&brand=${encodeURIComponent(brand)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
@@ -13838,7 +14295,7 @@ async function exportFabricReqExcel() {
     const search = document.getElementById('balance-qty-search').value;
 
     // Fetch all details matching active filters (WITHOUT target group filters, to get all rows for details sheet)
-    let url = `/api/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`;
+    let url = `/api/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&consider_fg=${balanceQtyConsider.fg}&consider_wip=${balanceQtyConsider.wip}&consider_pending=${balanceQtyConsider.pending}`;
 
     if (brand) url += `&brand=${encodeURIComponent(brand)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
@@ -14012,7 +14469,7 @@ async function toggleCommonGroupMembers(fromDate, toDate, common_production_name
     const [plan_name, financial_year] = planVal.split('|');
     const version = document.getElementById('balance-qty-version-select').value;
 
-    const url = `/api/balance-qty/members?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&common_production_name=${encodeURIComponent(common_production_name)}&size=${encodeURIComponent(size)}`;
+    const url = `/api/balance-qty/members?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&common_production_name=${encodeURIComponent(common_production_name)}&size=${encodeURIComponent(size)}&consider_fg=${balanceQtyConsider.fg}&consider_wip=${balanceQtyConsider.wip}&consider_pending=${balanceQtyConsider.pending}`;
 
     try {
         const response = await fetch(url);
@@ -15470,6 +15927,8 @@ function downloadStockWipBulkTemplate() {
     window.location.href = '/api/planning-stock/bulk-feed-template';
 }
 
+let stockWipDeleteCounts = {};
+
 async function openDeleteAllStockWipModal() {
     showLoader(true, "Fetching current Stock & WIP record counts...");
     try {
@@ -15477,19 +15936,27 @@ async function openDeleteAllStockWipModal() {
         const result = await response.json();
         if (response.ok && result.success) {
             const counts = result.counts || {};
+            stockWipDeleteCounts = counts;
             const elFabStock = document.getElementById('delete-all-cnt-fabric-stock');
             const elFabWip = document.getElementById('delete-all-cnt-fabric-wip');
             const elProdWip = document.getElementById('delete-all-cnt-production-wip');
             const elPending = document.getElementById('delete-all-cnt-pending-orders');
             const elFinished = document.getElementById('delete-all-cnt-finished-goods');
-            const elTotal = document.getElementById('delete-all-cnt-total');
 
             if (elFabStock) elFabStock.textContent = (counts.fabric_stock || 0).toLocaleString();
             if (elFabWip) elFabWip.textContent = (counts.fabric_wip || 0).toLocaleString();
             if (elProdWip) elProdWip.textContent = (counts.production_wip || 0).toLocaleString();
             if (elPending) elPending.textContent = (counts.pending_orders || 0).toLocaleString();
             if (elFinished) elFinished.textContent = (counts.finished_goods || 0).toLocaleString();
-            if (elTotal) elTotal.textContent = (counts.total || 0).toLocaleString();
+
+            // Set all checkboxes checked by default
+            document.querySelectorAll('.delete-stock-wip-cb').forEach(cb => {
+                cb.checked = true;
+            });
+            const selectAllCb = document.getElementById('delete-all-select-all');
+            if (selectAllCb) selectAllCb.checked = true;
+
+            updateDeleteSelectedSummary();
 
             const modal = document.getElementById('modal-stock-wip-delete-all');
             if (modal) modal.classList.remove('hidden');
@@ -15504,49 +15971,84 @@ async function openDeleteAllStockWipModal() {
     }
 }
 
+function toggleDeleteAllStockWipCheckboxes(checked) {
+    document.querySelectorAll('.delete-stock-wip-cb').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateDeleteSelectedSummary();
+}
+
+function updateDeleteSelectedSummary() {
+    const checkboxes = document.querySelectorAll('.delete-stock-wip-cb');
+    let total = 0;
+    let checkedCount = 0;
+
+    checkboxes.forEach(cb => {
+        if (cb.checked) {
+            checkedCount++;
+            const tabKey = cb.value.replace('-', '_');
+            total += (stockWipDeleteCounts[tabKey] || 0);
+        }
+    });
+
+    const selectAllCb = document.getElementById('delete-all-select-all');
+    if (selectAllCb) {
+        selectAllCb.checked = (checkedCount === checkboxes.length);
+        selectAllCb.indeterminate = (checkedCount > 0 && checkedCount < checkboxes.length);
+    }
+
+    const elTotal = document.getElementById('delete-all-cnt-total');
+    if (elTotal) elTotal.textContent = total.toLocaleString();
+
+    const btn = document.getElementById('btn-confirm-delete-all-stock-wip');
+    if (btn) {
+        btn.disabled = (checkedCount === 0);
+        btn.innerHTML = `<i class="fa-solid fa-trash-can"></i> Delete Selected Records (${total.toLocaleString()})`;
+    }
+}
+
 function closeDeleteAllStockWipModal() {
     const modal = document.getElementById('modal-stock-wip-delete-all');
     if (modal) modal.classList.add('hidden');
 }
 
 async function confirmDeleteAllStockWip() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.delete-stock-wip-cb:checked'));
+    if (checkedBoxes.length === 0) {
+        alert("Please select at least one table to delete.");
+        return;
+    }
+
+    const selectedTabs = checkedBoxes.map(cb => cb.value);
+
     const btn = document.getElementById('btn-confirm-delete-all-stock-wip');
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
     }
 
-    showLoader(true, "Deleting all transaction records across all 5 tables...");
+    showLoader(true, "Deleting records from selected tables...");
     try {
         const response = await fetch('/api/planning-stock/delete-all', {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tabs: selectedTabs })
         });
         const result = await response.json();
         if (response.ok && result.success) {
             closeDeleteAllStockWipModal();
-            showToast('Success', result.message || 'All Stock & WIP data deleted successfully.', 'success');
+            showToast('Success', result.message || 'Records deleted successfully.', 'success');
 
             await fetchStockWipSavedData();
-
-            const kpiTotal = document.getElementById('stock-wip-kpi-total');
-            const kpiValid = document.getElementById('stock-wip-kpi-valid');
-            const kpiInvalid = document.getElementById('stock-wip-kpi-invalid');
-            const kpiDuplicate = document.getElementById('stock-wip-kpi-duplicate');
-            if (kpiTotal) kpiTotal.textContent = '0';
-            if (kpiValid) kpiValid.textContent = '0';
-            if (kpiInvalid) kpiInvalid.textContent = '0';
-            if (kpiDuplicate) kpiDuplicate.textContent = '0';
         } else {
             showToast('Delete Failed', result.message || 'Failed to delete records.', 'error');
         }
     } catch (err) {
-        console.error("Error executing delete all:", err);
+        console.error("Error executing delete:", err);
         showToast('Error', 'Network error while deleting records.', 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Delete All Records';
         }
         showLoader(false);
     }
@@ -16392,3 +16894,3146 @@ async function saveBulkFeedGridData() {
         showLoader(false);
     }
 }
+
+// =====================================================================
+// PENDING QTY PLANNING MODULE CONTROLLER (ISOLATED & PRODUCTION-SAFE)
+// =====================================================================
+
+const pendingPlanningState = {
+    plan_id: null,
+    plan_name: 'LIVE_PENDING_ORDERS',
+    financial_year: 'CURRENT',
+    version: 'v1',
+    from_date: '2020-01-01',
+    to_date: '2099-12-31',
+    activeSubTab: 'pending-plan',
+    meta: null,
+    dataLoaded: false,
+    lastLoadedPlanId: null,
+    allRecords: [],
+    filters: {
+        item_type: new Set(),
+        brand: new Set(),
+        category: new Set(),
+        product_name: new Set(),
+        color: new Set(),
+        size: new Set(),
+        status: new Set(),
+        requirement_qty: null,
+        fg_qty: null,
+        wip_qty: null,
+        already_planned_qty: null,
+        net_pending_qty: null
+    },
+    distinctValues: {
+        item_type: [],
+        brand: [],
+        category: [],
+        product_name: [],
+        color: [],
+        size: [],
+        status: []
+    },
+    activePopupCol: null,
+    page: 1,
+    per_page: 50,
+    searchDebounceTimer: null,
+    currentPoolForAlloc: null,
+    expandedRows: new Set(),
+    expandedPools: new Set()
+};
+
+// Global click handler to close pending plan filter popup when clicking outside
+document.addEventListener('click', function (e) {
+    const popup = document.getElementById('pending-plan-filter-popup');
+    if (!popup || popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    if (e.target.closest('.pending-col-filter-btn')) return;
+    closePendingPlanFilterPopup();
+});
+
+async function initializePendingQtyPlanningTab() {
+    if (!pendingPlanningState.meta) {
+        await loadPendingPlanningMeta();
+    }
+    await calculatePendingQtyPlan(false);
+}
+
+async function loadPendingPlanningMeta() {
+    try {
+        const res = await fetch('/api/pending-qty-plan/meta');
+        const data = await res.json();
+        if (data.success) {
+            pendingPlanningState.meta = data;
+        }
+    } catch (err) {
+        console.error("Error loading pending plan meta:", err);
+    }
+}
+
+function populateSelectOptions(selectId, items, defaultLabel) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${defaultLabel}</option>`;
+    (items || []).forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item;
+        opt.textContent = item;
+        sel.appendChild(opt);
+    });
+}
+
+function getPendingFilterValues() {
+    return {
+        brand: document.getElementById('pending-brand-filter')?.value || '',
+        category: document.getElementById('pending-category-filter')?.value || '',
+        product_type: document.getElementById('pending-product-type-filter')?.value || 'All',
+        common_production_name: document.getElementById('pending-common-name-filter')?.value || '',
+        product: document.getElementById('pending-product-filter')?.value || '',
+        color: document.getElementById('pending-color-filter')?.value || '',
+        size: document.getElementById('pending-size-filter')?.value || '',
+        fabric_name: document.getElementById('pending-fabric-filter')?.value || '',
+        status: document.getElementById('pending-status-filter')?.value || 'All',
+        search: document.getElementById('pending-search-input')?.value || ''
+    };
+}
+
+function applyPendingPlanningFilters() {
+    pendingPlanningState.page = 1;
+    loadActivePendingSubTabTable();
+}
+
+function debouncePendingSearch() {
+    clearTimeout(pendingPlanningState.searchDebounceTimer);
+    pendingPlanningState.searchDebounceTimer = setTimeout(() => {
+        applyPendingPlanningFilters();
+    }, 300);
+}
+
+async function calculatePendingQtyPlan(recalculate = true) {
+    if (recalculate) {
+        showLoader(true, "Calculating Net Pending Qty, Shared Fabric Pools & Allocations...");
+    }
+
+    try {
+        const payload = {
+            plan_name: 'LIVE_PENDING_ORDERS',
+            financial_year: 'CURRENT',
+            version: 'v1',
+            from_date: '2020-01-01',
+            to_date: '2099-12-31'
+        };
+
+        const res = await fetch('/api/pending-qty-plan/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            pendingPlanningState.plan_id = data.plan_id;
+            if (recalculate) {
+                showToast('Calculated', 'Pending Qty Plan and Fabric Allocations calculated successfully!', 'success');
+            }
+            await refreshPendingPlanningSummary();
+            await loadActivePendingSubTabTable();
+        } else {
+            showToast('Calculation Notice', data.message || 'No pending orders found.', 'info');
+            clearPendingPlanningViews();
+        }
+    } catch (err) {
+        console.error("Error calculating pending plan:", err);
+        showToast('Error', 'Network error during calculation.', 'error');
+    } finally {
+        if (recalculate) {
+            showLoader(false);
+        }
+    }
+}
+
+async function refreshPendingPlanningSummary() {
+    try {
+        const params = new URLSearchParams();
+        if (pendingPlanningState.plan_id) {
+            params.append('plan_id', pendingPlanningState.plan_id);
+        }
+        const res = await fetch(`/api/pending-qty-plan/summary?${params.toString()}`);
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('kpi-total-pending-qty').textContent = Math.round(data.total_pending_qty || 0).toLocaleString();
+            document.getElementById('kpi-cut-now-qty').textContent = Math.round(data.cut_now_qty || 0).toLocaleString();
+            document.getElementById('kpi-partial-qty').textContent = Math.round(data.partial_qty || 0).toLocaleString();
+            document.getElementById('kpi-shortage-qty').textContent = Math.round(data.fabric_shortage_qty || 0).toLocaleString();
+            document.getElementById('kpi-shortage-kg-sub').textContent = `Shortage: ${(data.fabric_shortage_kg || 0).toFixed(2)} KG`;
+
+            const pools = data.fabric_pools || {};
+            document.getElementById('kpi-pool-enough').textContent = pools.enough || 0;
+            document.getElementById('kpi-pool-partial').textContent = pools.partial || 0;
+            document.getElementById('kpi-pool-shortage').textContent = pools.shortage || 0;
+
+            const badge = document.getElementById('kpi-plan-status-badge');
+            if (badge) {
+                const status = data.plan_status || 'Draft';
+                badge.textContent = status;
+                if (status === 'Confirmed') {
+                    badge.style.background = '#10b981';
+                } else if (status === 'Calculated') {
+                    badge.style.background = '#3b82f6';
+                } else if (status === 'Reviewed') {
+                    badge.style.background = '#f59e0b';
+                } else {
+                    badge.style.background = '#6b7280';
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error refreshing summary:", err);
+    }
+}
+
+function clearPendingPlanningViews() {
+    pendingPlanningState.dataLoaded = false;
+    pendingPlanningState.allRecords = [];
+    if (typeof fabRequiredState !== 'undefined') {
+        fabRequiredState.dataLoaded = false;
+        fabRequiredState.allRecords = [];
+        fabRequiredState.lastLoadedPlanId = null;
+    }
+    document.getElementById('pending-plan-table-body').innerHTML = `
+        <tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);">No pending planning data available.</td></tr>
+    `;
+    document.getElementById('cutting-plan-table-body').innerHTML = `
+        <tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);">No cutting plan data available.</td></tr>
+    `;
+    document.getElementById('fab-required-table-body').innerHTML = `
+        <tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);">No fabric pool data available.</td></tr>
+    `;
+}
+
+function switchPendingSubTab(subTabId) {
+    pendingPlanningState.activeSubTab = subTabId;
+
+    document.getElementById('pending-subtab-btn-pending')?.classList.remove('active');
+    document.getElementById('pending-subtab-btn-cutting')?.classList.remove('active');
+    document.getElementById('pending-subtab-btn-fabric')?.classList.remove('active');
+
+    document.getElementById('pending-subtab-view-pending')?.classList.add('hidden');
+    document.getElementById('pending-subtab-view-cutting')?.classList.add('hidden');
+    document.getElementById('pending-subtab-view-fabric')?.classList.add('hidden');
+
+    if (subTabId === 'pending-plan') {
+        document.getElementById('pending-subtab-btn-pending')?.classList.add('active');
+        document.getElementById('pending-subtab-view-pending')?.classList.remove('hidden');
+    } else if (subTabId === 'cutting-plan') {
+        document.getElementById('pending-subtab-btn-cutting')?.classList.add('active');
+        document.getElementById('pending-subtab-view-cutting')?.classList.remove('hidden');
+    } else if (subTabId === 'fab-required') {
+        document.getElementById('pending-subtab-btn-fabric')?.classList.add('active');
+        document.getElementById('pending-subtab-view-fabric')?.classList.remove('hidden');
+    }
+
+    pendingPlanningState.page = 1;
+    loadActivePendingSubTabTable();
+}
+
+async function loadActivePendingSubTabTable() {
+    if (!pendingPlanningState.plan_id) return;
+
+    if (pendingPlanningState.activeSubTab === 'pending-plan') {
+        await loadPendingPlanTable(pendingPlanningState.page);
+    } else if (pendingPlanningState.activeSubTab === 'cutting-plan') {
+        await loadCuttingPlanTable(1);
+    } else if (pendingPlanningState.activeSubTab === 'fab-required') {
+        await loadFabRequiredTable(pendingPlanningState.page);
+    }
+}
+
+// -------------------------------------------------------------
+// TAB 1: PENDING QTY PLAN TABLE (EXCEL-STYLE IN-MEMORY FILTERING)
+// -------------------------------------------------------------
+
+function populatePendingPlanDistinctValues() {
+    const item_types = new Set();
+    const brands = new Set();
+    const categories = new Set();
+    const product_names = new Set();
+    const colors = new Set();
+    const sizes = new Set();
+    const statuses = new Set();
+
+    (pendingPlanningState.allRecords || []).forEach(r => {
+        if (r.item_type) item_types.add(r.item_type);
+        if (r.brand) brands.add(r.brand);
+        if (r.category) categories.add(r.category);
+        if (r.product_name) product_names.add(r.product_name);
+        if (r.color) colors.add(r.color);
+        if (r.size) sizes.add(r.size);
+        if (r.status) statuses.add(r.status);
+    });
+
+    pendingPlanningState.distinctValues.item_type = Array.from(item_types).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.brand = Array.from(brands).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.category = Array.from(categories).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.product_name = Array.from(product_names).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.color = Array.from(colors).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.size = Array.from(sizes).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.status = Array.from(statuses).sort((a, b) => a.localeCompare(b));
+}
+
+function filterPendingPlanRecords() {
+    return (pendingPlanningState.allRecords || []).filter(r => {
+        // Categorical filters
+        const cats = ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'];
+        for (const col of cats) {
+            const activeSet = pendingPlanningState.filters[col];
+            if (activeSet && activeSet.size > 0) {
+                const val = r[col] || '';
+                if (!activeSet.has(val)) return false;
+            }
+        }
+
+        // Numeric filters
+        const nums = ['requirement_qty', 'fg_qty', 'wip_qty', 'already_planned_qty', 'net_pending_qty'];
+        for (const col of nums) {
+            const numFilter = pendingPlanningState.filters[col];
+            if (numFilter && numFilter.operator) {
+                const val = Number(r[col]) || 0;
+                const v1 = numFilter.val1 !== null && numFilter.val1 !== undefined ? Number(numFilter.val1) : null;
+                const v2 = numFilter.val2 !== null && numFilter.val2 !== undefined ? Number(numFilter.val2) : null;
+                if (!evalPendingNumericPredicate(val, numFilter.operator, v1, v2)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    });
+}
+
+function evalPendingNumericPredicate(val, op, v1, v2) {
+    if (v1 === null || isNaN(v1)) return true;
+    switch (op) {
+        case 'eq': return val === v1;
+        case 'neq': return val !== v1;
+        case 'gt': return val > v1;
+        case 'gte': return val >= v1;
+        case 'lt': return val < v1;
+        case 'lte': return val <= v1;
+        case 'between': return (v2 !== null && !isNaN(v2)) ? (val >= v1 && val <= v2) : (val >= v1);
+        default: return true;
+    }
+}
+
+async function loadPendingPlanTable(page = 1) {
+    pendingPlanningState.page = page;
+
+    // Check if initial fetch is needed or plan changed
+    if (!pendingPlanningState.dataLoaded || pendingPlanningState.lastLoadedPlanId !== pendingPlanningState.plan_id) {
+        if (!pendingPlanningState.plan_id) {
+            renderPendingPlanEmpty("No active plan calculated. Please click <strong>Recalculate & Refresh</strong>.");
+            return;
+        }
+
+        const tbody = document.getElementById('pending-plan-table-body');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading pending plan dataset...</td></tr>`;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                plan_id: pendingPlanningState.plan_id,
+                page: 1,
+                per_page: -1
+            });
+            const res = await fetch(`/api/pending-qty-plan/pending-plan?${params.toString()}`);
+            const data = await res.json();
+            if (data.success && data.rows) {
+                pendingPlanningState.allRecords = data.rows;
+            } else {
+                pendingPlanningState.allRecords = [];
+            }
+            pendingPlanningState.dataLoaded = true;
+            pendingPlanningState.lastLoadedPlanId = pendingPlanningState.plan_id;
+            populatePendingPlanDistinctValues();
+        } catch (err) {
+            console.error("Error fetching complete pending plan dataset:", err);
+            pendingPlanningState.allRecords = [];
+            pendingPlanningState.dataLoaded = true;
+        }
+    }
+
+    renderFilteredPendingPlanTable();
+}
+
+function renderFilteredPendingPlanTable() {
+    const tbody = document.getElementById('pending-plan-table-body');
+    if (!tbody) return;
+
+    const filteredRecords = filterPendingPlanRecords();
+    const totalCount = filteredRecords.length;
+
+    // Calculate dynamic totals for footer
+    let totReq = 0, totFg = 0, totWip = 0, totPlanned = 0, totNet = 0;
+    filteredRecords.forEach(r => {
+        totReq += Number(r.requirement_qty) || 0;
+        totFg += Number(r.fg_qty) || 0;
+        totWip += Number(r.wip_qty) || 0;
+        totPlanned += Number(r.already_planned_qty) || 0;
+        totNet += Number(r.net_pending_qty) || 0;
+    });
+
+    const footReq = document.getElementById('foot-pending-req');
+    if (footReq) footReq.textContent = Math.round(totReq).toLocaleString();
+    const footFg = document.getElementById('foot-pending-fg');
+    if (footFg) footFg.textContent = Math.round(totFg).toLocaleString();
+    const footWip = document.getElementById('foot-pending-wip');
+    if (footWip) footWip.textContent = Math.round(totWip).toLocaleString();
+    const footPlanned = document.getElementById('foot-pending-planned');
+    if (footPlanned) footPlanned.textContent = Math.round(totPlanned).toLocaleString();
+    const footNet = document.getElementById('foot-pending-net');
+    if (footNet) footNet.textContent = Math.round(totNet).toLocaleString();
+
+    if (totalCount === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No pending planning records match the active filters.</td></tr>`;
+        renderPendingPlanPaginationUI(0, pendingPlanningState.page, pendingPlanningState.per_page);
+        return;
+    }
+
+    const startIdx = (pendingPlanningState.page - 1) * pendingPlanningState.per_page;
+    const pageRows = filteredRecords.slice(startIdx, startIdx + pendingPlanningState.per_page);
+
+    let html = '';
+    pageRows.forEach(r => {
+        const isCommon = (r.item_type === 'Common');
+        const rowId = `pending-row-${r.id}`;
+        const isExpanded = pendingPlanningState.expandedRows.has(rowId);
+
+        html += `
+            <tr id="${rowId}" style="border-bottom: 1px solid var(--border-color); ${isCommon ? 'background: rgba(59, 130, 246, 0.03);' : ''}">
+                <td style="text-align: center;">
+                    ${isCommon ? `<button class="btn btn-sm" onclick="togglePendingCommonMembers('${rowId}', '${escapeHtml(r.common_production_name)}', '${escapeHtml(r.color)}', '${escapeHtml(r.size)}', this)" style="padding: 2px 6px; font-size: 11px;"><i class="fa-solid ${isExpanded ? 'fa-minus' : 'fa-plus'}"></i></button>` : ''}
+                </td>
+                <td><span class="badge" style="background: ${isCommon ? '#8b5cf6' : '#6b7280'}; color: #fff; font-size: 10px; padding: 2px 6px;">${escapeHtml(r.item_type || '')}</span></td>
+                <td>${escapeHtml(r.brand || '-')}</td>
+                <td>${escapeHtml(r.category || '-')}</td>
+                <td style="font-weight: 600; color: ${isCommon ? 'var(--accent-blue)' : 'var(--text-primary)'};">${escapeHtml(r.product_name || '')}</td>
+                <td>${escapeHtml(r.color || '')}</td>
+                <td><span class="badge" style="background: rgba(255,255,255,0.08);">${escapeHtml(r.size || '')}</span></td>
+                <td style="text-align: right; font-weight: 600;">${Math.round(r.requirement_qty || 0).toLocaleString()}</td>
+                <td style="text-align: right;">${Math.round(r.fg_qty || 0).toLocaleString()}</td>
+                <td style="text-align: right;">${Math.round(r.wip_qty || 0).toLocaleString()}</td>
+                <td style="text-align: right;">${Math.round(r.already_planned_qty || 0).toLocaleString()}</td>
+                <td style="text-align: right; font-weight: 700; color: var(--primary-color); font-size: 13px;">${Math.round(r.net_pending_qty || 0).toLocaleString()}</td>
+                <td style="text-align: center;">${renderStatusBadge(r.status)}</td>
+            </tr>
+            ${isCommon && isExpanded ? `<tr id="${rowId}-members" class="member-subrow"><td colspan="13" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.2);"><div id="${rowId}-members-container" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading members...</div></td></tr>` : ''}
+        `;
+    });
+
+    tbody.innerHTML = html;
+    renderPendingPlanPaginationUI(totalCount, pendingPlanningState.page, pendingPlanningState.per_page);
+}
+
+function renderPendingPlanEmpty(msg) {
+    const tbody = document.getElementById('pending-plan-table-body');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);">${msg}</td></tr>`;
+    }
+    renderPendingPlanPaginationUI(0, 1, pendingPlanningState.per_page);
+}
+
+function renderPendingPlanPaginationUI(totalRecords, page, perPage) {
+    const container = document.getElementById('pending-plan-pagination');
+    if (!container) return;
+
+    if (totalRecords === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted);">Showing 0 to 0 of 0 records</div>`;
+        return;
+    }
+
+    const totalPages = Math.ceil(totalRecords / perPage) || 1;
+    const fromRecord = Math.min((page - 1) * perPage + 1, totalRecords);
+    const toRecord = Math.min(page * perPage, totalRecords);
+
+    container.innerHTML = `
+        <div style="color: var(--text-secondary);">
+            Showing <strong>${fromRecord}</strong> to <strong>${toRecord}</strong> of <strong>${totalRecords.toLocaleString()}</strong> records
+            ${pendingPlanningState.allRecords.length !== totalRecords ? `<span style="color: var(--text-muted); font-size: 11px;"> (Filtered from ${pendingPlanningState.allRecords.length.toLocaleString()} total)</span>` : ''}
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-sm btn-outline" onclick="changePendingPlanPage(${page - 1})" ${page <= 1 ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} style="height: 28px; padding: 0 10px;">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <span style="font-size: 11.5px; color: var(--text-secondary); margin: 0 4px;">Page <strong>${page}</strong> of <strong>${totalPages}</strong></span>
+            <button class="btn btn-sm btn-outline" onclick="changePendingPlanPage(${page + 1})" ${page >= totalPages ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} style="height: 28px; padding: 0 10px;">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+function changePendingPlanPage(newPage) {
+    const filteredRecords = filterPendingPlanRecords();
+    const totalPages = Math.ceil(filteredRecords.length / pendingPlanningState.per_page) || 1;
+    if (newPage < 1) newPage = 1;
+    if (newPage > totalPages) newPage = totalPages;
+    pendingPlanningState.page = newPage;
+    renderFilteredPendingPlanTable(); // PURE IN-MEMORY (0 network requests)
+}
+
+const isPendingNumericCol = (colKey) => ['requirement_qty', 'fg_qty', 'wip_qty', 'already_planned_qty', 'net_pending_qty'].includes(colKey);
+
+function openPendingPlanFilter(colKey, event) {
+    if (event) event.stopPropagation();
+    pendingPlanningState.activePopupCol = colKey;
+
+    const popup = document.getElementById('pending-plan-filter-popup');
+    const titleSpan = document.getElementById('pending-popup-col-title');
+    const catSection = document.getElementById('pending-popup-categorical-section');
+    const numSection = document.getElementById('pending-popup-numeric-section');
+    const btn = event ? event.currentTarget : document.getElementById(`pending-filter-btn-${colKey}`);
+
+    const colTitles = {
+        item_type: 'Product Type Filter',
+        brand: 'Brand Filter',
+        category: 'Category Filter',
+        product_name: 'Product / Group Filter',
+        color: 'Color Filter',
+        size: 'Size Filter',
+        requirement_qty: 'Pending Order Qty Filter',
+        fg_qty: 'FG Stock Filter',
+        wip_qty: 'WIP Qty Filter',
+        already_planned_qty: 'Already Planned Filter',
+        net_pending_qty: 'Net Pending Qty Filter',
+        status: 'Status Filter'
+    };
+
+    if (titleSpan) titleSpan.textContent = colTitles[colKey] || 'Filter';
+
+    if (isPendingNumericCol(colKey)) {
+        if (catSection) catSection.classList.add('hidden');
+        if (numSection) numSection.classList.remove('hidden');
+        renderPendingNumericFilterUI(colKey);
+    } else {
+        if (numSection) numSection.classList.add('hidden');
+        if (catSection) catSection.classList.remove('hidden');
+        const searchInput = document.getElementById('pending-popup-search');
+        if (searchInput) searchInput.value = '';
+        renderPendingFilterCheckboxes(colKey, '');
+    }
+
+    if (popup && btn) {
+        popup.classList.remove('hidden');
+        const rect = btn.getBoundingClientRect();
+        popup.style.position = 'fixed';
+        popup.style.zIndex = '99999';
+        popup.style.top = `${rect.bottom + 4}px`;
+        let leftPos = rect.left - 100;
+        if (leftPos < 10) leftPos = 10;
+        if (leftPos + 250 > window.innerWidth) leftPos = window.innerWidth - 260;
+        popup.style.left = `${leftPos}px`;
+        if (!isPendingNumericCol(colKey)) {
+            const searchInput = document.getElementById('pending-popup-search');
+            if (searchInput) setTimeout(() => searchInput.focus(), 50);
+        }
+    }
+}
+
+function renderPendingFilterCheckboxes(colKey, searchFilter) {
+    const listContainer = document.getElementById('pending-popup-checkbox-list');
+    if (!listContainer) return;
+
+    const values = pendingPlanningState.distinctValues[colKey] || [];
+    const activeSet = pendingPlanningState.filters[colKey];
+    const term = (searchFilter || '').toLowerCase().trim();
+
+    let html = '';
+    let matchCount = 0;
+
+    values.forEach((val, idx) => {
+        if (term && !String(val).toLowerCase().includes(term)) return;
+        matchCount++;
+        const isChecked = (!activeSet || activeSet.size === 0) || activeSet.has(val);
+        const itemId = `pending-chk-${colKey}-${idx}`;
+        html += `
+            <label class="pending-filter-checkbox-item" for="${itemId}">
+                <input type="checkbox" id="${itemId}" value="${escapeHtml(val)}" ${isChecked ? 'checked' : ''}>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(val)}</span>
+            </label>
+        `;
+    });
+
+    if (matchCount === 0) {
+        html = `<div style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px 0;">No matching options</div>`;
+    }
+
+    listContainer.innerHTML = html;
+}
+
+function onPendingFilterSearchInput(val) {
+    if (!pendingPlanningState.activePopupCol) return;
+    renderPendingFilterCheckboxes(pendingPlanningState.activePopupCol, val);
+}
+
+function pendingFilterSelectAll(selectAll) {
+    const checkboxes = document.querySelectorAll('#pending-popup-checkbox-list input[type="checkbox"]');
+    checkboxes.forEach(chk => { chk.checked = selectAll; });
+}
+
+function renderPendingNumericFilterUI(colKey) {
+    const numFilter = pendingPlanningState.filters[colKey] || {};
+    const opSelect = document.getElementById('pending-popup-num-operator');
+    const val1Input = document.getElementById('pending-popup-num-val1');
+    const val2Input = document.getElementById('pending-popup-num-val2');
+    const val2Wrap = document.getElementById('pending-popup-num-val2-wrap');
+
+    const op = numFilter.operator || 'gte';
+    if (opSelect) opSelect.value = op;
+    if (val1Input) val1Input.value = numFilter.val1 !== undefined && numFilter.val1 !== null ? numFilter.val1 : '';
+    if (val2Input) val2Input.value = numFilter.val2 !== undefined && numFilter.val2 !== null ? numFilter.val2 : '';
+
+    if (val2Wrap) {
+        if (op === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function onPendingNumericOperatorChange(val) {
+    const val2Wrap = document.getElementById('pending-popup-num-val2-wrap');
+    if (val2Wrap) {
+        if (val === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function applyPendingPlanFilterCurrent() {
+    const colKey = pendingPlanningState.activePopupCol;
+    if (!colKey) return;
+
+    if (isPendingNumericCol(colKey)) {
+        const op = document.getElementById('pending-popup-num-operator')?.value || 'gte';
+        const v1Raw = document.getElementById('pending-popup-num-val1')?.value;
+        const v2Raw = document.getElementById('pending-popup-num-val2')?.value;
+
+        if (v1Raw === '' || v1Raw === undefined || v1Raw === null) {
+            pendingPlanningState.filters[colKey] = null;
+        } else {
+            pendingPlanningState.filters[colKey] = {
+                operator: op,
+                val1: Number(v1Raw),
+                val2: (op === 'between' && v2Raw !== '') ? Number(v2Raw) : null
+            };
+        }
+    } else {
+        const checkboxes = document.querySelectorAll('#pending-popup-checkbox-list input[type="checkbox"]');
+        const checkedValues = new Set();
+        checkboxes.forEach(chk => {
+            if (chk.checked) checkedValues.add(chk.value);
+        });
+
+        const totalValues = pendingPlanningState.distinctValues[colKey] || [];
+        if (checkedValues.size === totalValues.length || checkedValues.size === 0) {
+            pendingPlanningState.filters[colKey] = new Set();
+        } else {
+            pendingPlanningState.filters[colKey] = checkedValues;
+        }
+    }
+
+    updatePendingFilterBtnVisualState(colKey);
+    closePendingPlanFilterPopup();
+    pendingPlanningState.page = 1;
+    renderFilteredPendingPlanTable(); // PURE IN-MEMORY (0 network requests)
+}
+
+function clearPendingPlanFilterCurrent() {
+    const colKey = pendingPlanningState.activePopupCol;
+    if (!colKey) return;
+
+    if (isPendingNumericCol(colKey)) {
+        pendingPlanningState.filters[colKey] = null;
+    } else {
+        if (pendingPlanningState.filters[colKey]) {
+            pendingPlanningState.filters[colKey].clear();
+        } else {
+            pendingPlanningState.filters[colKey] = new Set();
+        }
+    }
+
+    updatePendingFilterBtnVisualState(colKey);
+    closePendingPlanFilterPopup();
+    pendingPlanningState.page = 1;
+    renderFilteredPendingPlanTable(); // PURE IN-MEMORY (0 network requests)
+}
+
+function clearAllPendingPlanHeaderFilters() {
+    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'].forEach(k => {
+        if (pendingPlanningState.filters[k]) pendingPlanningState.filters[k].clear();
+        else pendingPlanningState.filters[k] = new Set();
+        updatePendingFilterBtnVisualState(k);
+    });
+
+    ['requirement_qty', 'fg_qty', 'wip_qty', 'already_planned_qty', 'net_pending_qty'].forEach(k => {
+        pendingPlanningState.filters[k] = null;
+        updatePendingFilterBtnVisualState(k);
+    });
+
+    closePendingPlanFilterPopup();
+    pendingPlanningState.page = 1;
+    renderFilteredPendingPlanTable(); // PURE IN-MEMORY (0 network requests)
+}
+
+function updatePendingFilterBtnVisualState(colKey) {
+    const btn = document.getElementById(`pending-filter-btn-${colKey}`);
+    let isFiltered = false;
+
+    if (isPendingNumericCol(colKey)) {
+        isFiltered = !!pendingPlanningState.filters[colKey];
+    } else {
+        isFiltered = pendingPlanningState.filters[colKey] && pendingPlanningState.filters[colKey].size > 0;
+    }
+
+    if (btn) {
+        if (isFiltered) btn.classList.add('active');
+        else btn.classList.remove('active');
+    }
+
+    // Check if any filter is active across all columns
+    let anyActive = false;
+    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'].forEach(k => {
+        if (pendingPlanningState.filters[k] && pendingPlanningState.filters[k].size > 0) anyActive = true;
+    });
+    ['requirement_qty', 'fg_qty', 'wip_qty', 'already_planned_qty', 'net_pending_qty'].forEach(k => {
+        if (pendingPlanningState.filters[k]) anyActive = true;
+    });
+
+    const clearAllBtn = document.getElementById('pending-plan-clear-all-filters-btn');
+    if (clearAllBtn) {
+        if (anyActive) clearAllBtn.classList.remove('hidden');
+        else clearAllBtn.classList.add('hidden');
+    }
+}
+
+function closePendingPlanFilterPopup() {
+    const popup = document.getElementById('pending-plan-filter-popup');
+    if (popup) popup.classList.add('hidden');
+    pendingPlanningState.activePopupCol = null;
+}
+
+async function togglePendingCommonMembers(rowId, commonName, primaryColor, size, btn) {
+    const isExpanded = pendingPlanningState.expandedRows.has(rowId);
+    if (isExpanded) {
+        pendingPlanningState.expandedRows.delete(rowId);
+        const subRow = document.getElementById(`${rowId}-members`);
+        if (subRow) subRow.remove();
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+    } else {
+        pendingPlanningState.expandedRows.add(rowId);
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-minus"></i>';
+
+        const parentTr = document.getElementById(rowId);
+        if (!parentTr) return;
+
+        const subTr = document.createElement('tr');
+        subTr.id = `${rowId}-members`;
+        subTr.className = 'member-subrow';
+        subTr.innerHTML = `
+            <td colspan="14" style="padding: 8px 16px 12px 48px; background: rgba(0,0,0,0.18); border-bottom: 1px solid var(--border-color);">
+                <div id="${rowId}-members-container" style="padding: 4px 0;">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Loading member breakdown...
+                </div>
+            </td>
+        `;
+        parentTr.after(subTr);
+
+        try {
+            const params = new URLSearchParams({
+                plan_id: pendingPlanningState.plan_id,
+                common_name: commonName,
+                color: primaryColor,
+                size: size
+            });
+            const res = await fetch(`/api/pending-qty-plan/members?${params.toString()}`);
+            const data = await res.json();
+            const container = document.getElementById(`${rowId}-members-container`);
+            if (!container) return;
+
+            if (!data.success || !data.members || data.members.length === 0) {
+                container.innerHTML = `<div style="font-size: 11.5px; color: var(--text-muted);">No member SKUs recorded.</div>`;
+                return;
+            }
+
+            let mHtml = `
+                <div style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">
+                    <i class="fa-solid fa-code-fork"></i> Common Production Member SKUs:
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; background: var(--bg-card); border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color);">
+                    <thead>
+                        <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border-color);">
+                            <th style="padding: 6px 10px; text-align: left;">Member Style</th>
+                            <th style="padding: 6px 10px; text-align: left;">Color</th>
+                            <th style="padding: 6px 10px; text-align: left;">Size</th>
+                            <th style="padding: 6px 10px; text-align: right;">Req Qty</th>
+                            <th style="padding: 6px 10px; text-align: right;">FG</th>
+                            <th style="padding: 6px 10px; text-align: right;">WIP</th>
+                            <th style="padding: 6px 10px; text-align: right; color: var(--primary-color);">Pending</th>
+                            <th style="padding: 6px 10px; text-align: right;">Fab Req (KG)</th>
+                            <th style="padding: 6px 10px; text-align: right;">Alloc (KG)</th>
+                            <th style="padding: 6px 10px; text-align: right; color: #10b981;">Cuttable</th>
+                            <th style="padding: 6px 10px; text-align: right; color: #f59e0b;">Hold</th>
+                            <th style="padding: 6px 10px; text-align: center;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.members.forEach(m => {
+                mHtml += `
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 6px 10px; font-weight: 500;">${escapeHtml(m.product_name)}</td>
+                        <td style="padding: 6px 10px;">${escapeHtml(m.color)}</td>
+                        <td style="padding: 6px 10px;">${escapeHtml(m.size)}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${Math.round(m.requirement_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${Math.round(m.fg_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${Math.round(m.wip_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: var(--primary-color);">${Math.round(m.net_pending_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${m.fabric_required_kg.toFixed(2)}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${m.allocated_fabric_kg.toFixed(2)}</td>
+                        <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: #10b981;">${Math.round(m.cuttable_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right; color: #f59e0b;">${Math.round(m.hold_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: center;">${renderStatusBadge(m.status)}</td>
+                    </tr>
+                `;
+            });
+
+            mHtml += `</tbody></table>`;
+            container.innerHTML = mHtml;
+        } catch (err) {
+            console.error("Error loading member SKUs:", err);
+        }
+    }
+}
+
+// =============================================================
+// TAB 2: CUTTING PLAN (ISOLATED HIERARCHICAL PRESENTATION ENGINE)
+// Hierarchy: Fabric -> Color -> Dia -> Mapped Products -> Sub Total
+// =============================================================
+
+const cuttingPlanState = {
+    allRecords: [],             // Complete dataset from API
+    overallTotalPending: 0,     // Invariant denominator for Net Pending %
+    overallTotals: {},          // Raw totals from backend
+    filters: {                  // Active column filters (columnKey -> Set of selected values)
+        fabric: new Set(),
+        color: new Set(),
+        dia: new Set(),
+        product: new Set(),
+        type: new Set(),
+        status: new Set()
+    },
+    distinctValues: {           // All distinct options extracted from allRecords
+        fabric: [],
+        color: [],
+        dia: [],
+        product: [],
+        type: [],
+        status: []
+    },
+    showSubTotals: true,        // Subtotal toggle (default ON)
+    collapsedGroups: new Set(), // Set of groupKeys that are collapsed
+    page: 1,
+    perPage: 50,
+    activePopupCol: null
+};
+
+// Global click handler to close filter popup when clicking outside
+document.addEventListener('click', function (e) {
+    const popup = document.getElementById('cutting-plan-filter-popup');
+    if (!popup || popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    if (e.target.closest('.cutting-col-filter-btn')) return;
+    closeCuttingPlanFilterPopup();
+});
+
+async function loadCuttingPlanTable(page = 1) {
+    cuttingPlanState.page = page;
+    const tbody = document.getElementById('cutting-plan-table-body');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading complete cutting plan dataset...</td></tr>`;
+    }
+
+    try {
+        // Fetch complete cutting plan dataset & fabric pool stock in parallel
+        const params = new URLSearchParams({
+            plan_id: pendingPlanningState.plan_id,
+            page: 1,
+            per_page: -1
+        });
+
+        let allRows = [];
+        let totals = {};
+
+        const [cuttingRes, fabRes] = await Promise.all([
+            fetch(`/api/pending-qty-plan/cutting-plan?${params.toString()}`).then(r => r.json()).catch(() => ({ success: false })),
+            fetch(`/api/pending-qty-plan/fab-required?plan_id=${pendingPlanningState.plan_id}&per_page=-1`).then(r => r.json()).catch(() => ({ success: false }))
+        ]);
+
+        if (cuttingRes.success && cuttingRes.rows) {
+            allRows = cuttingRes.rows;
+            totals = cuttingRes.totals || {};
+
+            // Fallback if per_page=-1 was constrained by backend pagination
+            if (cuttingRes.total_count && cuttingRes.total_count > allRows.length) {
+                let currentPage = 2;
+                const pageSize = 100;
+                while (allRows.length < cuttingRes.total_count) {
+                    const pageParams = new URLSearchParams({
+                        plan_id: pendingPlanningState.plan_id,
+                        page: currentPage,
+                        per_page: pageSize
+                    });
+                    const pRes = await fetch(`/api/pending-qty-plan/cutting-plan?${pageParams.toString()}`);
+                    const pData = await pRes.json();
+                    if (pData.success && pData.rows && pData.rows.length > 0) {
+                        allRows = allRows.concat(pData.rows);
+                        currentPage++;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Build authoritative physical fabric pool available stock map
+        const fabricPoolMap = new Map();
+        if (fabRes.success && fabRes.rows) {
+            fabRes.rows.forEach(p => {
+                const fKey = String(p.fabric_name || '').toLowerCase().trim().replace(/[\s_-]+/g, '_');
+                const cKey = String(p.fabric_color || p.color || '').toLowerCase().trim().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+                const dNum = parseFloat(String(p.dia || '').replace(/[^0-9.]/g, ''));
+                const dKey = (!isNaN(dNum) && dNum > 0) ? dNum.toFixed(1) : '0.0';
+                const pKey = `${fKey}|${cKey}|${dKey}`;
+                fabricPoolMap.set(pKey, Number(p.available_stock_kg) || 0);
+            });
+        }
+        cuttingPlanState.fabricPoolMap = fabricPoolMap;
+
+        cuttingPlanState.allRecords = allRows;
+        cuttingPlanState.overallTotals = totals;
+
+        // Lock the authoritative invariant denominator for Net Pending %
+        cuttingPlanState.overallTotalPending = Number(totals.net_pending_qty) || allRows.reduce((sum, r) => sum + (Number(r.net_pending_qty) || 0), 0) || 1;
+
+        // Populate distinct filter options from the COMPLETE dataset
+        populateCuttingPlanFilters();
+
+        const subTotalCb = document.getElementById('cutting-show-subtotal-toggle') || document.getElementById('cutting-show-subtotal-cb');
+        if (subTotalCb) {
+            cuttingPlanState.showSubTotals = subTotalCb.checked;
+        }
+
+        // Process filters, build hierarchy, calculate subtotals, and render
+        processAndRenderCuttingPlan();
+
+    } catch (err) {
+        console.error("Error loading cutting plan table:", err);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 40px; color: #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Error loading cutting plan data.</td></tr>`;
+        }
+    }
+}
+
+function populateCuttingPlanFilters() {
+    const fabrics = new Set();
+    const colors = new Set();
+    const dias = new Set();
+    const products = new Set();
+    const types = new Set();
+    const statuses = new Set();
+
+    cuttingPlanState.allRecords.forEach(r => {
+        // Include only records with Net Pending Qty > 0 for filter choices
+        if (Number(r.net_pending_qty) > 0) {
+            if (r.fabric_name) fabrics.add(r.fabric_name);
+            const colorVal = r.fabric_color || r.color;
+            if (colorVal) colors.add(colorVal);
+            if (r.dia !== undefined && r.dia !== null) {
+                const diaStr = (Number(r.dia) > 0) ? (Number(r.dia).toFixed(1) + '"') : String(r.dia);
+                dias.add(diaStr);
+            }
+            if (r.product_name) products.add(r.product_name);
+            if (r.item_type) types.add(r.item_type);
+            if (r.status) statuses.add(r.status);
+        }
+    });
+
+    cuttingPlanState.distinctValues.fabric = Array.from(fabrics).sort((a, b) => a.localeCompare(b));
+    cuttingPlanState.distinctValues.color = Array.from(colors).sort((a, b) => a.localeCompare(b));
+    cuttingPlanState.distinctValues.dia = Array.from(dias).sort((a, b) => parseFloat(a) - parseFloat(b));
+    cuttingPlanState.distinctValues.product = Array.from(products).sort((a, b) => a.localeCompare(b));
+    cuttingPlanState.distinctValues.type = Array.from(types).sort((a, b) => a.localeCompare(b));
+    cuttingPlanState.distinctValues.status = Array.from(statuses).sort((a, b) => a.localeCompare(b));
+}
+
+function openCuttingPlanFilter(colKey, event) {
+    if (event) event.stopPropagation();
+    cuttingPlanState.activePopupCol = colKey;
+
+    const popup = document.getElementById('cutting-plan-filter-popup');
+    const titleSpan = document.getElementById('cutting-popup-col-title');
+    const searchInput = document.getElementById('cutting-popup-search');
+    const btn = event ? event.currentTarget : document.getElementById(`cutting-filter-btn-${colKey}`);
+
+    const colTitles = {
+        fabric: 'Fabric Filter',
+        color: 'Color Filter',
+        dia: 'Dia Filter',
+        product: 'Product Filter',
+        type: 'Type Filter',
+        status: 'Cut Status Filter'
+    };
+
+    if (titleSpan) titleSpan.textContent = colTitles[colKey] || 'Filter';
+    if (searchInput) searchInput.value = '';
+
+    renderCuttingFilterCheckboxes(colKey, '');
+
+    if (popup && btn) {
+        popup.classList.remove('hidden');
+        const rect = btn.getBoundingClientRect();
+        popup.style.position = 'fixed';
+        popup.style.zIndex = '99999';
+        popup.style.top = `${rect.bottom + 4}px`;
+        let leftPos = rect.left - 100;
+        if (leftPos < 10) leftPos = 10;
+        if (leftPos + 250 > window.innerWidth) leftPos = window.innerWidth - 260;
+        popup.style.left = `${leftPos}px`;
+        if (searchInput) setTimeout(() => searchInput.focus(), 50);
+    }
+}
+
+function closeCuttingPlanFilterPopup() {
+    const popup = document.getElementById('cutting-plan-filter-popup');
+    if (popup) popup.classList.add('hidden');
+    cuttingPlanState.activePopupCol = null;
+}
+function closeCuttingPlanFilter() {
+    closeCuttingPlanFilterPopup();
+}
+
+function renderCuttingFilterCheckboxes(colKey, searchFilter) {
+    const listContainer = document.getElementById('cutting-popup-checkbox-list');
+    if (!listContainer) return;
+
+    const values = cuttingPlanState.distinctValues[colKey] || [];
+    const activeSet = cuttingPlanState.filters[colKey] || new Set();
+    const term = (searchFilter || '').toLowerCase().trim();
+
+    let html = '';
+    let matchCount = 0;
+
+    values.forEach((val, idx) => {
+        if (term && !String(val).toLowerCase().includes(term)) return;
+        matchCount++;
+        const isChecked = (activeSet.size === 0) || activeSet.has(val);
+        const itemId = `cutting-chk-${colKey}-${idx}`;
+        html += `
+            <label class="cutting-filter-checkbox-item" for="${itemId}">
+                <input type="checkbox" id="${itemId}" class="cutting-filter-item-cb" value="${escapeHtml(String(val))}" ${isChecked ? 'checked' : ''}>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(String(val))}</span>
+            </label>
+        `;
+    });
+
+    if (matchCount === 0) {
+        html = `<div style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px 0;">No matching options</div>`;
+    }
+
+    listContainer.innerHTML = html;
+}
+
+function onCuttingFilterSearchInput(val) {
+    if (!cuttingPlanState.activePopupCol) return;
+    renderCuttingFilterCheckboxes(cuttingPlanState.activePopupCol, val);
+}
+function onCuttingFilterSearch(term) {
+    onCuttingFilterSearchInput(term);
+}
+
+function cuttingFilterSelectAll(selectAll) {
+    const checkboxes = document.querySelectorAll('#cutting-popup-checkbox-list input[type="checkbox"]');
+    checkboxes.forEach(chk => { chk.checked = selectAll; });
+}
+function selectAllCuttingFilter(select) {
+    cuttingFilterSelectAll(select);
+}
+
+function applyCuttingPlanFilterCurrent() {
+    const colKey = cuttingPlanState.activePopupCol;
+    if (!colKey) return;
+
+    const checkboxes = document.querySelectorAll('#cutting-popup-checkbox-list input[type="checkbox"]');
+    const checkedValues = new Set();
+    checkboxes.forEach(chk => {
+        if (chk.checked) checkedValues.add(chk.value);
+    });
+
+    const totalValues = cuttingPlanState.distinctValues[colKey] || [];
+
+    // If all are checked or none are checked, treat as no active filter on this column
+    if (checkedValues.size === totalValues.length || checkedValues.size === 0) {
+        cuttingPlanState.filters[colKey].clear();
+    } else {
+        cuttingPlanState.filters[colKey] = checkedValues;
+    }
+
+    updateCuttingFilterButtonState(colKey);
+    closeCuttingPlanFilterPopup();
+    cuttingPlanState.page = 1;
+    processAndRenderCuttingPlan();
+}
+function applyCuttingPlanFilter() {
+    applyCuttingPlanFilterCurrent();
+}
+
+function clearCuttingPlanFilterCurrent() {
+    const colKey = cuttingPlanState.activePopupCol;
+    if (!colKey) return;
+
+    cuttingPlanState.filters[colKey].clear();
+    updateCuttingFilterButtonState(colKey);
+    closeCuttingPlanFilterPopup();
+    cuttingPlanState.page = 1;
+    processAndRenderCuttingPlan();
+}
+function clearSingleCuttingFilter() {
+    clearCuttingPlanFilterCurrent();
+}
+
+function clearAllCuttingPlanHeaderFilters() {
+    Object.keys(cuttingPlanState.filters).forEach(k => {
+        cuttingPlanState.filters[k].clear();
+        updateCuttingFilterButtonState(k);
+    });
+    closeCuttingPlanFilterPopup();
+    cuttingPlanState.page = 1;
+    processAndRenderCuttingPlan();
+}
+function clearAllCuttingPlanFilters() {
+    clearAllCuttingPlanHeaderFilters();
+}
+
+function updateCuttingFilterButtonState(colKey) {
+    const btn = document.getElementById(`cutting-filter-btn-${colKey}`);
+    if (!btn) return;
+    const isFiltered = cuttingPlanState.filters[colKey] && cuttingPlanState.filters[colKey].size > 0;
+    if (isFiltered) {
+        btn.classList.add('active');
+        btn.innerHTML = `<i class="fa-solid fa-filter-circle-xmark"></i>`;
+    } else {
+        btn.classList.remove('active');
+        btn.innerHTML = `<i class="fa-solid fa-filter"></i>`;
+    }
+
+    let anyActive = false;
+    Object.keys(cuttingPlanState.filters).forEach(k => {
+        if (cuttingPlanState.filters[k].size > 0) anyActive = true;
+    });
+
+    const clearAllBtn = document.getElementById('cutting-clear-all-filters-btn');
+    if (clearAllBtn) {
+        if (anyActive) clearAllBtn.classList.remove('hidden');
+        else clearAllBtn.classList.add('hidden');
+    }
+}
+function updateFilterBtnVisualState(colKey) {
+    updateCuttingFilterButtonState(colKey);
+}
+
+function toggleCuttingPlanSubtotals(checked) {
+    if (checked !== undefined) {
+        cuttingPlanState.showSubTotals = !!checked;
+    } else {
+        const cb = document.getElementById('cutting-show-subtotal-toggle') || document.getElementById('cutting-show-subtotal-cb');
+        if (cb) cuttingPlanState.showSubTotals = cb.checked;
+    }
+    processAndRenderCuttingPlan();
+}
+function toggleCuttingSubTotals(checked) {
+    toggleCuttingPlanSubtotals(checked);
+}
+
+function expandAllCuttingPlanGroups() {
+    cuttingPlanState.collapsedGroups.clear();
+    processAndRenderCuttingPlan();
+}
+
+function collapseAllCuttingPlanGroups() {
+    cuttingPlanState.collapsedGroups.clear();
+    cuttingPlanState.allRecords.forEach(r => {
+        const fab = r.fabric_name || 'Unknown Fabric';
+        const color = r.fabric_color || r.color || 'Unknown Color';
+        const diaStr = (Number(r.dia) > 0) ? (Number(r.dia).toFixed(1) + '"') : String(r.dia || '-');
+        cuttingPlanState.collapsedGroups.add(`fabric:${fab}`);
+        cuttingPlanState.collapsedGroups.add(`color:${fab}|${color}`);
+        cuttingPlanState.collapsedGroups.add(`dia:${fab}|${color}|${diaStr}`);
+    });
+    processAndRenderCuttingPlan();
+}
+
+function toggleCuttingPlanGroup(groupKey) {
+    if (cuttingPlanState.collapsedGroups.has(groupKey)) {
+        cuttingPlanState.collapsedGroups.delete(groupKey);
+    } else {
+        cuttingPlanState.collapsedGroups.add(groupKey);
+    }
+    processAndRenderCuttingPlan();
+}
+
+// -------------------------------------------------------------
+// HIERARCHICAL PROCESSING & RENDERING PIPELINE (15 COLUMNS)
+// -------------------------------------------------------------
+function processAndRenderCuttingPlan() {
+    const tbody = document.getElementById('cutting-plan-table-body');
+    if (!tbody) return;
+
+    if (!cuttingPlanState.allRecords || cuttingPlanState.allRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 40px; color: var(--text-muted);">No cutting plan data available.</td></tr>`;
+        updateCuttingPlanFootTotals([]);
+        renderCuttingPlanPaginationUI(0, 1, cuttingPlanState.perPage);
+        return;
+    }
+
+    // STEP 1: Filter records
+    const filteredRecords = cuttingPlanState.allRecords.filter(r => {
+        // Strict exclusion rule: Net Pending Qty > 0
+        if (Number(r.net_pending_qty) <= 0) return false;
+
+        const fab = r.fabric_name || 'Unknown Fabric';
+        const col = r.fabric_color || r.color || 'Unknown Color';
+        const diaStr = (Number(r.dia) > 0) ? (Number(r.dia).toFixed(1) + '"') : String(r.dia || '-');
+        const prod = r.product_name || '';
+        const type = r.item_type || '';
+        const stat = r.status || '';
+
+        // Multi-column AND logic
+        if (cuttingPlanState.filters.fabric.size > 0 && !cuttingPlanState.filters.fabric.has(fab)) return false;
+        if (cuttingPlanState.filters.color.size > 0 && !cuttingPlanState.filters.color.has(col)) return false;
+        if (cuttingPlanState.filters.dia.size > 0 && !cuttingPlanState.filters.dia.has(diaStr)) return false;
+        if (cuttingPlanState.filters.product.size > 0 && !cuttingPlanState.filters.product.has(prod)) return false;
+        if (cuttingPlanState.filters.type.size > 0 && !cuttingPlanState.filters.type.has(type)) return false;
+        if (cuttingPlanState.filters.status.size > 0 && !cuttingPlanState.filters.status.has(stat)) return false;
+
+        return true;
+    });
+
+    if (filteredRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No cutting plan rows match the active filters.</td></tr>`;
+        renderCuttingPlanPaginationUI(0, cuttingPlanState.page, cuttingPlanState.perPage);
+        updateCuttingPlanFootTotals([]);
+        return;
+    }
+
+    // STEP 2: Build 4-Level Grouping Hierarchy (Fabric -> Color -> Dia -> Products)
+    const hierarchy = new Map(); // fabric -> Map(color -> Map(dia -> { products: [], available_stock_kg: 0 }))
+
+    filteredRecords.forEach(r => {
+        const fab = r.fabric_name || 'Unknown Fabric';
+        const col = r.fabric_color || r.color || 'Unknown Color';
+        const diaStr = (Number(r.dia) > 0) ? (Number(r.dia).toFixed(1) + '"') : String(r.dia || '-');
+
+        if (!hierarchy.has(fab)) hierarchy.set(fab, new Map());
+        const colorMap = hierarchy.get(fab);
+
+        if (!colorMap.has(col)) colorMap.set(col, new Map());
+        const diaMap = colorMap.get(col);
+
+        // Authoritative resolution of Fabric Stock Available KG for physical pool
+        const fKey = String(fab || '').toLowerCase().trim().replace(/[\s_-]+/g, '_');
+        const cKey = String(col || '').toLowerCase().trim().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+        const dNum = parseFloat(String(r.dia || '').replace(/[^0-9.]/g, ''));
+        const dKey = (!isNaN(dNum) && dNum > 0) ? dNum.toFixed(1) : '0.0';
+        const poolKey = `${fKey}|${cKey}|${dKey}`;
+
+        let poolStock = 0;
+        if (cuttingPlanState.fabricPoolMap && cuttingPlanState.fabricPoolMap.has(poolKey)) {
+            poolStock = cuttingPlanState.fabricPoolMap.get(poolKey);
+        } else if (Number(r.available_stock_kg) > 0) {
+            poolStock = Number(r.available_stock_kg);
+        }
+
+        if (!diaMap.has(diaStr)) {
+            diaMap.set(diaStr, {
+                products: [],
+                available_stock_kg: poolStock
+            });
+        }
+
+        const diaGroup = diaMap.get(diaStr);
+        diaGroup.products.push(r);
+        if (diaGroup.available_stock_kg === 0 && poolStock > 0) {
+            diaGroup.available_stock_kg = poolStock;
+        }
+    });
+
+    // STEP 3: Flatten into Display Rows structure (with Expand/Collapse and Subtotals)
+    const displayRows = [];
+
+    // Sort fabrics alphabetically
+    const sortedFabrics = Array.from(hierarchy.keys()).sort((a, b) => a.localeCompare(b));
+
+    sortedFabrics.forEach(fab => {
+        const colorMap = hierarchy.get(fab);
+        const fabKey = `fabric:${fab}`;
+        const isFabCollapsed = cuttingPlanState.collapsedGroups.has(fabKey);
+
+        // Count total products in this fabric
+        let fabProductCount = 0;
+        colorMap.forEach(dMap => {
+            dMap.forEach(dGroup => {
+                fabProductCount += dGroup.products.length;
+            });
+        });
+
+        // Level 1: Fabric Header Row
+        displayRows.push({
+            rowType: 'group-fabric',
+            key: fabKey,
+            title: fab,
+            count: fabProductCount,
+            isCollapsed: isFabCollapsed
+        });
+
+        if (isFabCollapsed) return;
+
+        // Sort colors alphabetically
+        const sortedColors = Array.from(colorMap.keys()).sort((a, b) => a.localeCompare(b));
+
+        sortedColors.forEach(col => {
+            const diaMap = colorMap.get(col);
+            const colorKey = `color:${fab}|${col}`;
+            const isColorCollapsed = cuttingPlanState.collapsedGroups.has(colorKey);
+
+            let colorProductCount = 0;
+            diaMap.forEach(dGroup => {
+                colorProductCount += dGroup.products.length;
+            });
+
+            // Level 2: Color Header Row
+            displayRows.push({
+                rowType: 'group-color',
+                key: colorKey,
+                fabric: fab,
+                title: col,
+                count: colorProductCount,
+                isCollapsed: isColorCollapsed
+            });
+
+            if (isColorCollapsed) return;
+
+            // Sort dias numerically/alphabetically
+            const sortedDias = Array.from(diaMap.keys()).sort((a, b) => parseFloat(a) - parseFloat(b));
+
+            sortedDias.forEach(diaStr => {
+                const diaGroup = diaMap.get(diaStr);
+                const diaKey = `dia:${fab}|${col}|${diaStr}`;
+                const isDiaCollapsed = cuttingPlanState.collapsedGroups.has(diaKey);
+
+                // Level 3: Dia Header Row
+                displayRows.push({
+                    rowType: 'group-dia',
+                    key: diaKey,
+                    fabric: fab,
+                    color: col,
+                    title: diaStr,
+                    count: diaGroup.products.length,
+                    isCollapsed: isDiaCollapsed
+                });
+
+                if (isDiaCollapsed) return;
+
+                // Sort products by priority ASC, net_pending_qty DESC
+                const sortedProducts = diaGroup.products.slice().sort((a, b) => {
+                    const pA = a.priority !== undefined ? a.priority : 999;
+                    const pB = b.priority !== undefined ? b.priority : 999;
+                    if (pA !== pB) return pA - pB;
+                    return (b.net_pending_qty || 0) - (a.net_pending_qty || 0);
+                });
+
+                // Level 4: Mapped Product Rows (15 Columns, Available KG = Actual Physical Pool Stock)
+                let groupPending = 0;
+                let groupReqQty = 0;
+                let groupFabReq = 0;
+                let groupCuttable = 0;
+                let groupHold = 0;
+                let groupShortage = 0;
+
+                sortedProducts.forEach(prod => {
+                    groupPending += Number(prod.net_pending_qty) || 0;
+                    groupReqQty += Number(prod.requirement_qty !== undefined && prod.requirement_qty !== null ? prod.requirement_qty : prod.net_pending_qty) || 0;
+                    groupFabReq += Number(prod.fabric_required_kg) || 0;
+                    groupCuttable += Number(prod.cuttable_qty) || 0;
+                    groupHold += Number(prod.hold_qty) || 0;
+                    groupShortage += Number(prod.shortage_kg) || 0;
+
+                    displayRows.push({
+                        rowType: 'product',
+                        fabric: fab,
+                        color: col,
+                        dia: diaStr,
+                        data: prod,
+                        available_stock_kg: diaGroup.available_stock_kg !== undefined ? diaGroup.available_stock_kg : (Number(prod.available_stock_kg) || 0)
+                    });
+                });
+
+                // Level 5: Sub Total Row (15 Columns, Available KG = Actual Physical Pool Stock ONCE)
+                if (cuttingPlanState.showSubTotals) {
+                    displayRows.push({
+                        rowType: 'subtotal',
+                        fabric: fab,
+                        color: col,
+                        dia: diaStr,
+                        net_pending_qty: groupPending,
+                        balance_req_qty: groupReqQty,
+                        fabric_required_kg: groupFabReq,
+                        available_stock_kg: diaGroup.available_stock_kg, // Actual physical pool stock ONCE
+                        cuttable_qty: groupCuttable,
+                        hold_qty: groupHold,
+                        shortage_kg: groupShortage
+                    });
+                }
+            });
+        });
+    });
+
+    // STEP 4: Paginate Display Rows
+    const totalDisplayRows = displayRows.length;
+    const perPage = cuttingPlanState.perPage;
+    const totalPages = Math.ceil(totalDisplayRows / perPage) || 1;
+    if (cuttingPlanState.page > totalPages) cuttingPlanState.page = totalPages;
+    if (cuttingPlanState.page < 1) cuttingPlanState.page = 1;
+
+    const startIndex = (cuttingPlanState.page - 1) * perPage;
+    const endIndex = Math.min(startIndex + perPage, totalDisplayRows);
+    const visibleRows = displayRows.slice(startIndex, endIndex);
+
+    // STEP 5: Render Visible Rows (15 Columns Table)
+    let html = '';
+    const overallPendingDenominator = cuttingPlanState.overallTotalPending || 1;
+
+    visibleRows.forEach(item => {
+        if (item.rowType === 'group-fabric') {
+            html += `
+                <tr class="cutting-group-fabric-row" style="border-bottom: 1px solid var(--border-color);">
+                    <td colspan="15" style="padding: 9px 14px;">
+                        <button class="cutting-group-toggle-btn" onclick="toggleCuttingPlanGroup('${escapeHtml(item.key)}')" title="Toggle Fabric Group">
+                            <i class="fa-solid ${item.isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i>
+                        </button>
+                        <span style="font-size: 13px; font-weight: 700; color: #60a5fa; letter-spacing: 0.3px;">
+                            <i class="fa-solid fa-layer-group" style="margin-right: 6px;"></i> FABRIC: ${escapeHtml(item.title)}
+                        </span>
+                        <span class="badge" style="background: rgba(59, 130, 246, 0.25); color: #93c5fd; font-size: 11px; margin-left: 10px; padding: 2px 8px; border-radius: 10px;">
+                            ${item.count} items
+                        </span>
+                    </td>
+                </tr>
+            `;
+        } else if (item.rowType === 'group-color') {
+            html += `
+                <tr class="cutting-group-color-row" style="border-bottom: 1px solid var(--border-color);">
+                    <td colspan="15" style="padding: 7px 14px 7px 28px;">
+                        <button class="cutting-group-toggle-btn" onclick="toggleCuttingPlanGroup('${escapeHtml(item.key)}')" title="Toggle Color Group">
+                            <i class="fa-solid ${item.isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i>
+                        </button>
+                        <span style="font-size: 12.5px; font-weight: 600; color: #c084fc;">
+                            <i class="fa-solid fa-palette" style="margin-right: 6px;"></i> COLOR: ${escapeHtml(item.title)}
+                        </span>
+                        <span class="badge" style="background: rgba(139, 92, 246, 0.2); color: #d8b4fe; font-size: 10.5px; margin-left: 8px; padding: 1px 7px; border-radius: 10px;">
+                            ${item.count} items
+                        </span>
+                    </td>
+                </tr>
+            `;
+        } else if (item.rowType === 'group-dia') {
+            html += `
+                <tr class="cutting-group-dia-row" style="border-bottom: 1px solid var(--border-color);">
+                    <td colspan="15" style="padding: 6px 14px 6px 48px;">
+                        <button class="cutting-group-toggle-btn" onclick="toggleCuttingPlanGroup('${escapeHtml(item.key)}')" title="Toggle Dia Group">
+                            <i class="fa-solid ${item.isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i>
+                        </button>
+                        <span style="font-size: 12px; font-weight: 600; color: #34d399;">
+                            <i class="fa-solid fa-circle-dot" style="margin-right: 6px;"></i> DIA: ${escapeHtml(item.title)}
+                        </span>
+                        <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; font-size: 10px; margin-left: 8px; padding: 1px 6px; border-radius: 10px;">
+                            ${item.count} items
+                        </span>
+                    </td>
+                </tr>
+            `;
+        } else if (item.rowType === 'product') {
+            const r = item.data;
+            const isCommon = (r.item_type === 'Common');
+            const skuTitle = `${r.product_name} (${r.color || item.color} - ${r.size || '-'})`;
+            const netPending = Number(r.net_pending_qty) || 0;
+            const netPendingPct = ((netPending / overallPendingDenominator) * 100).toFixed(2);
+            const balanceReq = Number(r.requirement_qty !== undefined && r.requirement_qty !== null ? r.requirement_qty : r.net_pending_qty) || 0;
+            const availStock = item.available_stock_kg !== undefined ? item.available_stock_kg : (Number(r.available_stock_kg) || 0);
+
+            html += `
+                <tr style="border-bottom: 1px solid var(--border-color); ${isCommon ? 'background: rgba(59, 130, 246, 0.02);' : ''}">
+                    <td style="color: var(--text-secondary); font-size: 11.5px; padding-left: 12px;">${escapeHtml(item.fabric)}</td>
+                    <td style="color: var(--text-secondary); font-size: 11.5px;">${escapeHtml(item.color)}</td>
+                    <td style="text-align: center; color: var(--text-secondary); font-size: 11.5px;"><span class="badge" style="background: rgba(255,255,255,0.06);">${escapeHtml(item.dia)}</span></td>
+                    <td style="font-weight: 600; color: ${isCommon ? 'var(--accent-blue)' : 'var(--text-primary)'};">
+                        ${isCommon ? `<i class="fa-solid fa-code-fork" style="font-size: 10px; color: #8b5cf6; margin-right: 4px;" title="Common Production"></i>` : ''}
+                        ${escapeHtml(r.product_name)}
+                    </td>
+                    <td style="text-align: center;">
+                        <span class="badge" style="background: ${isCommon ? '#8b5cf6' : '#6b7280'}; color: #fff; font-size: 10px; padding: 2px 6px;">${r.item_type}</span>
+                    </td>
+                    <td style="text-align: right; font-weight: 700; color: var(--primary-color); font-size: 12.5px;">${Math.round(netPending).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 600; color: var(--text-secondary);">${netPendingPct}%</td>
+                    <td style="text-align: right; font-weight: 600;">${Math.round(balanceReq).toLocaleString()}</td>
+                    <td style="text-align: right;">${(Number(r.fabric_required_kg) || 0).toFixed(2)}</td>
+                    <td style="text-align: right; font-weight: 600; color: ${availStock > 0 ? '#10b981' : 'var(--text-muted)'};">${availStock > 0 ? availStock.toFixed(2) : '-'}</td>
+                    <td style="text-align: right; font-weight: 700; color: #10b981;">${Math.round(Number(r.cuttable_qty) || 0).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 600; color: #f59e0b;">${Math.round(Number(r.hold_qty) || 0).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 600; color: #ef4444;">${(Number(r.shortage_kg) || 0).toFixed(2)}</td>
+                    <td style="text-align: center;">${renderStatusBadge(r.status)}</td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-outline" onclick="openPendingPriorityModal(${r.id}, '${escapeHtml(skuTitle)}', ${r.priority})" title="Set manual priority" style="padding: 2px 7px; font-size: 11px;">
+                            ${r.priority || 999} <i class="fa-solid fa-arrow-up-1-9" style="font-size: 9px; opacity: 0.7; margin-left: 2px;"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        } else if (item.rowType === 'subtotal') {
+            const subPending = item.net_pending_qty || 0;
+            const subPendingPct = ((subPending / overallPendingDenominator) * 100).toFixed(2);
+            const availStock = item.available_stock_kg || 0;
+
+            html += `
+                <tr class="cutting-subtotal-row">
+                    <td style="color: var(--text-secondary); font-size: 11px; padding-left: 12px;">${escapeHtml(item.fabric)}</td>
+                    <td style="color: var(--text-secondary); font-size: 11px;">${escapeHtml(item.color)}</td>
+                    <td style="text-align: center; color: var(--text-secondary); font-size: 11px;">${escapeHtml(item.dia)}</td>
+                    <td style="font-weight: 800; color: #60a5fa; letter-spacing: 0.3px;">
+                        <i class="fa-solid fa-calculator" style="margin-right: 4px;"></i> SUB TOTAL
+                    </td>
+                    <td style="text-align: center; color: var(--text-muted);">-</td>
+                    <td style="text-align: right; font-weight: 800; color: var(--primary-color); font-size: 13px;">${Math.round(subPending).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 700; color: #60a5fa;">${subPendingPct}%</td>
+                    <td style="text-align: right; font-weight: 700;">${Math.round(item.balance_req_qty || 0).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 700;">${(item.fabric_required_kg || 0).toFixed(2)}</td>
+                    <td style="text-align: right; font-weight: 800; color: #10b981; font-size: 12.5px;">${availStock > 0 ? availStock.toFixed(2) : '-'}</td>
+                    <td style="text-align: right; font-weight: 800; color: #10b981; font-size: 13px;">${Math.round(item.cuttable_qty || 0).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 700; color: #f59e0b;">${Math.round(item.hold_qty || 0).toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 700; color: #ef4444;">${(item.shortage_kg || 0).toFixed(2)}</td>
+                    <td style="text-align: center; color: var(--text-muted);">-</td>
+                    <td style="text-align: center; color: var(--text-muted);">-</td>
+                </tr>
+            `;
+        }
+    });
+
+    tbody.innerHTML = html;
+
+    // STEP 6: Update Overall Foot Totals (15 Columns)
+    updateCuttingPlanFootTotals(filteredRecords);
+
+    // STEP 7: Render Pagination UI
+    renderCuttingPlanPaginationUI(totalDisplayRows, cuttingPlanState.page, perPage);
+}
+
+function updateCuttingPlanFootTotals(filteredRecords) {
+    let totPending = 0;
+    let totReq = 0;
+    let totFabReq = 0;
+    let totCuttable = 0;
+    let totHold = 0;
+    let totShortage = 0;
+
+    filteredRecords.forEach(r => {
+        totPending += Number(r.net_pending_qty) || 0;
+        totReq += Number(r.requirement_qty !== undefined && r.requirement_qty !== null ? r.requirement_qty : r.net_pending_qty) || 0;
+        totFabReq += Number(r.fabric_required_kg) || 0;
+        totCuttable += Number(r.cuttable_qty) || 0;
+        totHold += Number(r.hold_qty) || 0;
+        totShortage += Number(r.shortage_kg) || 0;
+    });
+
+    const pendingPct = ((totPending / (cuttingPlanState.overallTotalPending || 1)) * 100).toFixed(2) + '%';
+
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+    setVal('foot-cutting-pending', Math.round(totPending).toLocaleString());
+    setVal('foot-cutting-pending-pct', pendingPct);
+    setVal('foot-cutting-balance-req', Math.round(totReq).toLocaleString());
+    setVal('foot-cutting-fab-req', totFabReq.toFixed(2));
+    setVal('foot-cutting-avail', '-');
+    setVal('foot-cutting-cuttable', Math.round(totCuttable).toLocaleString());
+    setVal('foot-cutting-hold', Math.round(totHold).toLocaleString());
+    setVal('foot-cutting-shortage', totShortage.toFixed(2));
+}
+
+function renderCuttingPlanPaginationUI(totalRows, currentPage, perPage) {
+    const container = document.getElementById('cutting-plan-pagination');
+    if (!container) return;
+
+    if (totalRows === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted);">Showing 0 items</div>`;
+        return;
+    }
+
+    const totalPages = Math.ceil(totalRows / perPage) || 1;
+    const startItem = (currentPage - 1) * perPage + 1;
+    const endItem = Math.min(currentPage * perPage, totalRows);
+
+    container.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 14px; color: var(--text-secondary);">
+            <span>Showing <strong>${startItem}</strong> to <strong>${endItem}</strong> of <strong>${totalRows.toLocaleString()}</strong> items</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span>Rows per page:</span>
+                <select onchange="changeCuttingPlanPerPage(Number(this.value))" class="form-select" style="padding: 2px 6px; height: 26px; font-size: 11.5px; width: 70px;">
+                    <option value="25" ${perPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${perPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${perPage === 100 ? 'selected' : ''}>100</option>
+                    <option value="200" ${perPage === 200 ? 'selected' : ''}>200</option>
+                    <option value="10000" ${perPage >= 10000 ? 'selected' : ''}>All</option>
+                </select>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="btn btn-sm btn-outline" onclick="changeCuttingPlanPage(1)" ${currentPage <= 1 ? 'disabled' : ''} style="padding: 2px 8px; font-size: 11px;">
+                <i class="fa-solid fa-angles-left"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="changeCuttingPlanPage(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''} style="padding: 2px 8px; font-size: 11px;">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <span style="padding: 0 8px; font-weight: 600; color: var(--text-primary);">Page ${currentPage} of ${totalPages}</span>
+            <button class="btn btn-sm btn-outline" onclick="changeCuttingPlanPage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''} style="padding: 2px 8px; font-size: 11px;">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="changeCuttingPlanPage(${totalPages})" ${currentPage >= totalPages ? 'disabled' : ''} style="padding: 2px 8px; font-size: 11px;">
+                <i class="fa-solid fa-angles-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+function changeCuttingPlanPage(newPage) {
+    cuttingPlanState.page = newPage;
+    processAndRenderCuttingPlan();
+}
+
+function changeCuttingPlanPerPage(newPerPage) {
+    cuttingPlanState.perPage = newPerPage;
+    cuttingPlanState.page = 1;
+    processAndRenderCuttingPlan();
+}
+
+// -------------------------------------------------------------
+// TAB 3: FAB REQUIRED (FABRIC POOL VIEW) - EXCEL-STYLE IN-MEMORY FILTERING
+// -------------------------------------------------------------
+
+const fabRequiredState = {
+    dataLoaded: false,
+    allRecords: [],
+    lastLoadedPlanId: null,
+    filters: {
+        fabric_name: new Set(),
+        fabric_color: new Set(),
+        dia: null,
+        gsm: null,
+        consuming_products_count: null,
+        available_stock_kg: null,
+        required_fabric_kg: null,
+        allocated_fabric_kg: null,
+        remaining_fabric_kg: null,
+        shortage_kg: null,
+        coverage_pct: null,
+        status: new Set()
+    },
+    distinctValues: {
+        fabric_name: [],
+        fabric_color: [],
+        status: []
+    },
+    activePopupCol: null,
+    page: 1,
+    per_page: 50
+};
+
+// Global click handler to close fab required filter popup when clicking outside
+document.addEventListener('click', function (e) {
+    const popup = document.getElementById('fab-required-filter-popup');
+    if (!popup || popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    if (e.target.closest('.pending-col-filter-btn') || e.target.closest('.fab-required-col-filter-btn')) return;
+    closeFabRequiredFilterPopup();
+});
+
+const isFabRequiredNumericCol = (colKey) => [
+    'dia', 'gsm', 'consuming_products_count', 'available_stock_kg',
+    'required_fabric_kg', 'allocated_fabric_kg', 'remaining_fabric_kg',
+    'shortage_kg', 'coverage_pct'
+].includes(colKey);
+
+function populateFabRequiredDistinctValues() {
+    const fabrics = new Set();
+    const colors = new Set();
+    const statuses = new Set();
+
+    (fabRequiredState.allRecords || []).forEach(r => {
+        if (r.fabric_name !== undefined && r.fabric_name !== null && String(r.fabric_name).trim() !== '') {
+            fabrics.add(String(r.fabric_name));
+        }
+        if (r.fabric_color !== undefined && r.fabric_color !== null && String(r.fabric_color).trim() !== '') {
+            colors.add(String(r.fabric_color));
+        }
+        if (r.status !== undefined && r.status !== null && String(r.status).trim() !== '') {
+            statuses.add(String(r.status));
+        }
+    });
+
+    fabRequiredState.distinctValues.fabric_name = Array.from(fabrics).sort((a, b) => a.localeCompare(b));
+    fabRequiredState.distinctValues.fabric_color = Array.from(colors).sort((a, b) => a.localeCompare(b));
+    fabRequiredState.distinctValues.status = Array.from(statuses).sort((a, b) => a.localeCompare(b));
+}
+
+function filterFabRequiredRecords() {
+    return (fabRequiredState.allRecords || []).filter(r => {
+        // Categorical filters
+        const cats = ['fabric_name', 'fabric_color', 'status'];
+        for (const col of cats) {
+            const activeSet = fabRequiredState.filters[col];
+            if (activeSet && activeSet.size > 0) {
+                const rawVal = r[col];
+                const val = (rawVal !== undefined && rawVal !== null) ? String(rawVal) : '';
+                if (!activeSet.has(val)) return false;
+            }
+        }
+
+        // Numeric filters
+        const nums = [
+            'dia', 'gsm', 'consuming_products_count', 'available_stock_kg',
+            'required_fabric_kg', 'allocated_fabric_kg', 'remaining_fabric_kg',
+            'shortage_kg', 'coverage_pct'
+        ];
+        for (const col of nums) {
+            const numFilter = fabRequiredState.filters[col];
+            if (numFilter && numFilter.operator) {
+                const rawVal = r[col];
+                if (rawVal === undefined || rawVal === null || rawVal === '') return false;
+                const val = Number(rawVal);
+                if (isNaN(val)) return false;
+
+                const v1 = (numFilter.val1 !== null && numFilter.val1 !== undefined && numFilter.val1 !== '') ? Number(numFilter.val1) : null;
+                const v2 = (numFilter.val2 !== null && numFilter.val2 !== undefined && numFilter.val2 !== '') ? Number(numFilter.val2) : null;
+
+                if (!evalFabRequiredNumericPredicate(val, numFilter.operator, v1, v2)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    });
+}
+
+function evalFabRequiredNumericPredicate(val, op, v1, v2) {
+    if (v1 === null || isNaN(v1)) return true;
+    switch (op) {
+        case 'eq': return val === v1;
+        case 'neq': return val !== v1;
+        case 'gt': return val > v1;
+        case 'gte': return val >= v1;
+        case 'lt': return val < v1;
+        case 'lte': return val <= v1;
+        case 'between': return (v2 !== null && !isNaN(v2)) ? (val >= v1 && val <= v2) : (val >= v1);
+        default: return true;
+    }
+}
+
+async function loadFabRequiredTable(page = 1) {
+    fabRequiredState.page = page;
+
+    if (!fabRequiredState.dataLoaded || fabRequiredState.lastLoadedPlanId !== pendingPlanningState.plan_id) {
+        if (!pendingPlanningState.plan_id) {
+            renderFabRequiredEmpty("No fabric pool data available. Please select a plan and click <strong>Recalculate & Refresh</strong>.");
+            return;
+        }
+
+        const tbody = document.getElementById('fab-required-table-body');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading fabric pool dataset...</td></tr>`;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                plan_id: pendingPlanningState.plan_id,
+                page: 1,
+                per_page: -1
+            });
+            const res = await fetch(`/api/pending-qty-plan/fab-required?${params.toString()}`);
+            const data = await res.json();
+            if (data.success && data.rows) {
+                fabRequiredState.allRecords = data.rows;
+            } else {
+                fabRequiredState.allRecords = [];
+            }
+            fabRequiredState.dataLoaded = true;
+            fabRequiredState.lastLoadedPlanId = pendingPlanningState.plan_id;
+            populateFabRequiredDistinctValues();
+        } catch (err) {
+            console.error("Error fetching complete fab required dataset:", err);
+            fabRequiredState.allRecords = [];
+            fabRequiredState.dataLoaded = true;
+        }
+    }
+
+    renderFilteredFabRequiredTable();
+}
+
+function renderFilteredFabRequiredTable() {
+    const tbody = document.getElementById('fab-required-table-body');
+    if (!tbody) return;
+
+    const filteredRecords = filterFabRequiredRecords();
+    const totalCount = filteredRecords.length;
+
+    // Dynamic totals calculation across filtered rows
+    let totAvail = 0, totReq = 0, totAlloc = 0, totShortage = 0;
+    filteredRecords.forEach(r => {
+        totAvail += Number(r.available_stock_kg) || 0;
+        totReq += Number(r.required_fabric_kg) || 0;
+        totAlloc += Number(r.allocated_fabric_kg) || 0;
+        totShortage += Number(r.shortage_kg) || 0;
+    });
+
+    const footAvail = document.getElementById('foot-fabric-avail');
+    if (footAvail) footAvail.textContent = totAvail.toFixed(2);
+    const footReq = document.getElementById('foot-fabric-req');
+    if (footReq) footReq.textContent = totReq.toFixed(2);
+    const footAlloc = document.getElementById('foot-fabric-alloc');
+    if (footAlloc) footAlloc.textContent = totAlloc.toFixed(2);
+    const footShortage = document.getElementById('foot-fabric-shortage');
+    if (footShortage) footShortage.textContent = totShortage.toFixed(2);
+
+    if (totalCount === 0) {
+        tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No fabric pools match the active filter criteria.</td></tr>`;
+        renderFabRequiredPaginationUI(0, fabRequiredState.page, fabRequiredState.per_page);
+        return;
+    }
+
+    const startIdx = (fabRequiredState.page - 1) * fabRequiredState.per_page;
+    const pageRows = filteredRecords.slice(startIdx, startIdx + fabRequiredState.per_page);
+
+    let html = '';
+    pageRows.forEach(r => {
+        const poolKey = `${r.fabric_name}_${r.fabric_color}_${r.dia}_${r.gsm}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const isExpanded = pendingPlanningState.expandedPools.has(poolKey);
+
+        const diaDisplay = (r.dia !== undefined && r.dia !== null && !isNaN(Number(r.dia))) ? Number(r.dia).toFixed(1) : '-';
+        const gsmDisplay = (r.gsm !== undefined && r.gsm !== null) ? r.gsm : '-';
+        const availDisplay = (r.available_stock_kg !== undefined && r.available_stock_kg !== null) ? Number(r.available_stock_kg).toFixed(2) : '0.00';
+        const reqDisplay = (r.required_fabric_kg !== undefined && r.required_fabric_kg !== null) ? Number(r.required_fabric_kg).toFixed(2) : '0.00';
+        const allocDisplay = (r.allocated_fabric_kg !== undefined && r.allocated_fabric_kg !== null) ? Number(r.allocated_fabric_kg).toFixed(2) : '0.00';
+        const remDisplay = (r.remaining_fabric_kg !== undefined && r.remaining_fabric_kg !== null) ? Number(r.remaining_fabric_kg).toFixed(2) : '0.00';
+        const shortageDisplay = (r.shortage_kg !== undefined && r.shortage_kg !== null) ? Number(r.shortage_kg).toFixed(2) : '0.00';
+        const coveragePct = Number(r.coverage_pct) || 0;
+
+        html += `
+            <tr id="pool-row-${poolKey}" style="border-bottom: 1px solid var(--border-color);">
+                <td style="text-align: center;">
+                    <button class="btn btn-sm" onclick="toggleFabricPoolConsumers('${poolKey}', '${escapeHtml(r.fabric_name)}', '${escapeHtml(r.fabric_color)}', ${r.dia}, ${r.gsm}, this)" style="padding: 2px 6px; font-size: 11px;">
+                        <i class="fa-solid ${isExpanded ? 'fa-minus' : 'fa-plus'}"></i>
+                    </button>
+                </td>
+                <td style="font-weight: 600;">${escapeHtml(r.fabric_name || '')}</td>
+                <td>${escapeHtml(r.fabric_color || '')}</td>
+                <td style="text-align: center;"><span class="badge" style="background: rgba(255,255,255,0.08);">${diaDisplay}</span></td>
+                <td style="text-align: center;">${gsmDisplay}</td>
+                <td style="text-align: center;"><span class="badge" style="background: #3b82f6; color: #fff; font-size: 11px; padding: 2px 7px;">${r.consuming_products_count || 0} styles</span></td>
+                <td style="text-align: right; font-weight: 700; color: #10b981;">${availDisplay}</td>
+                <td style="text-align: right; font-weight: 600;">${reqDisplay}</td>
+                <td style="text-align: right; font-weight: 600;">${allocDisplay}</td>
+                <td style="text-align: right; color: var(--text-secondary);">${remDisplay}</td>
+                <td style="text-align: right; font-weight: 700; color: #ef4444;">${shortageDisplay}</td>
+                <td style="text-align: center;">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <span style="font-weight: 600;">${coveragePct}%</span>
+                        <div style="width: 40px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${Math.min(100, coveragePct)}%; height: 100%; background: ${coveragePct >= 100 ? '#10b981' : (coveragePct > 0 ? '#f59e0b' : '#ef4444')};"></div>
+                        </div>
+                    </div>
+                </td>
+                <td style="text-align: center;">${renderStatusBadge(r.status)}</td>
+                <td style="text-align: center;">
+                    <button class="btn btn-sm btn-primary" onclick="openPendingManualAllocModal('${escapeHtml(r.fabric_name)}', '${escapeHtml(r.fabric_color)}', ${r.dia}, ${r.gsm}, ${r.available_stock_kg})" title="Manually allocate fabric stock across consuming styles" style="padding: 2px 8px; font-size: 11px;">
+                        <i class="fa-solid fa-sliders"></i> Allocate
+                    </button>
+                </td>
+            </tr>
+            ${isExpanded ? `<tr id="pool-subrow-${poolKey}"><td colspan="14" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.18);"><div id="pool-subrow-container-${poolKey}" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading consuming styles...</div></td></tr>` : ''}
+        `;
+    });
+
+    tbody.innerHTML = html;
+    renderFabRequiredPaginationUI(totalCount, fabRequiredState.page, fabRequiredState.per_page);
+}
+
+function renderFabRequiredEmpty(msg) {
+    const tbody = document.getElementById('fab-required-table-body');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);">${msg}</td></tr>`;
+    }
+    renderFabRequiredPaginationUI(0, 1, fabRequiredState.per_page);
+}
+
+function renderFabRequiredPaginationUI(totalRecords, page, perPage) {
+    const container = document.getElementById('fab-required-pagination');
+    if (!container) return;
+
+    if (totalRecords === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted);">Showing 0 to 0 of 0 records</div>`;
+        return;
+    }
+
+    const totalPages = Math.ceil(totalRecords / perPage) || 1;
+    const fromRecord = Math.min((page - 1) * perPage + 1, totalRecords);
+    const toRecord = Math.min(page * perPage, totalRecords);
+
+    container.innerHTML = `
+        <div style="color: var(--text-secondary);">
+            Showing <strong>${fromRecord}</strong> to <strong>${toRecord}</strong> of <strong>${totalRecords.toLocaleString()}</strong> records
+            ${fabRequiredState.allRecords.length !== totalRecords ? `<span style="color: var(--text-muted); font-size: 11px;"> (Filtered from ${fabRequiredState.allRecords.length.toLocaleString()} total)</span>` : ''}
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-sm btn-outline" onclick="changeFabRequiredPage(${page - 1})" ${page <= 1 ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} style="height: 28px; padding: 0 10px;">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <span style="font-size: 11.5px; color: var(--text-secondary); margin: 0 4px;">Page <strong>${page}</strong> of <strong>${totalPages}</strong></span>
+            <button class="btn btn-sm btn-outline" onclick="changeFabRequiredPage(${page + 1})" ${page >= totalPages ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} style="height: 28px; padding: 0 10px;">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+function changeFabRequiredPage(newPage) {
+    const filteredRecords = filterFabRequiredRecords();
+    const totalPages = Math.ceil(filteredRecords.length / fabRequiredState.per_page) || 1;
+    if (newPage < 1) newPage = 1;
+    if (newPage > totalPages) newPage = totalPages;
+    fabRequiredState.page = newPage;
+    renderFilteredFabRequiredTable();
+}
+
+function openFabRequiredFilter(colKey, event) {
+    if (event) event.stopPropagation();
+    fabRequiredState.activePopupCol = colKey;
+
+    const popup = document.getElementById('fab-required-filter-popup');
+    const titleSpan = document.getElementById('fab-required-popup-col-title');
+    const catSection = document.getElementById('fab-required-popup-categorical-section');
+    const numSection = document.getElementById('fab-required-popup-numeric-section');
+    const btn = event ? event.currentTarget : document.getElementById(`fab-required-filter-btn-${colKey}`);
+
+    const colTitles = {
+        fabric_name: 'Fabric Name Filter',
+        fabric_color: 'Fabric Color Filter',
+        dia: 'Dia Filter',
+        gsm: 'GSM Filter',
+        consuming_products_count: 'Consuming Styles Filter',
+        available_stock_kg: 'Avail Stock (KG) Filter',
+        required_fabric_kg: 'Total Req (KG) Filter',
+        allocated_fabric_kg: 'Allocated (KG) Filter',
+        remaining_fabric_kg: 'Remaining (KG) Filter',
+        shortage_kg: 'Shortage (KG) Filter',
+        coverage_pct: 'Coverage % Filter',
+        status: 'Status Filter'
+    };
+
+    if (titleSpan) titleSpan.textContent = colTitles[colKey] || `${colKey} Filter`;
+
+    if (isFabRequiredNumericCol(colKey)) {
+        if (catSection) catSection.classList.add('hidden');
+        if (numSection) numSection.classList.remove('hidden');
+        renderFabRequiredNumericFilterUI(colKey);
+    } else {
+        if (numSection) numSection.classList.add('hidden');
+        if (catSection) catSection.classList.remove('hidden');
+        const searchInput = document.getElementById('fab-required-popup-search');
+        if (searchInput) searchInput.value = '';
+        renderFabRequiredFilterCheckboxes(colKey, '');
+    }
+
+    if (popup && btn) {
+        popup.classList.remove('hidden');
+        const rect = btn.getBoundingClientRect();
+        popup.style.position = 'fixed';
+        popup.style.zIndex = '99999';
+        popup.style.top = `${rect.bottom + 4}px`;
+        let leftPos = rect.left - 100;
+        if (leftPos < 10) leftPos = 10;
+        if (leftPos + 250 > window.innerWidth) leftPos = window.innerWidth - 260;
+        popup.style.left = `${leftPos}px`;
+        if (!isFabRequiredNumericCol(colKey)) {
+            const searchInput = document.getElementById('fab-required-popup-search');
+            if (searchInput) setTimeout(() => searchInput.focus(), 50);
+        }
+    }
+}
+
+function closeFabRequiredFilterPopup() {
+    const popup = document.getElementById('fab-required-filter-popup');
+    if (popup) popup.classList.add('hidden');
+    fabRequiredState.activePopupCol = null;
+}
+
+function renderFabRequiredFilterCheckboxes(colKey, searchFilter) {
+    const listContainer = document.getElementById('fab-required-popup-checkbox-list');
+    if (!listContainer) return;
+
+    const values = fabRequiredState.distinctValues[colKey] || [];
+    const activeSet = fabRequiredState.filters[colKey];
+    const term = (searchFilter || '').toLowerCase().trim();
+
+    let html = '';
+    let matchCount = 0;
+
+    values.forEach((val, idx) => {
+        if (term && !String(val).toLowerCase().includes(term)) return;
+        matchCount++;
+        const isChecked = (!activeSet || activeSet.size === 0) || activeSet.has(val);
+        const itemId = `fab-required-chk-${colKey}-${idx}`;
+        html += `
+            <label class="pending-filter-checkbox-item" for="${itemId}">
+                <input type="checkbox" id="${itemId}" value="${escapeHtml(val)}" ${isChecked ? 'checked' : ''}>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(val)}</span>
+            </label>
+        `;
+    });
+
+    if (matchCount === 0) {
+        html = `<div style="font-size: 11px; color: var(--text-muted); text-align: center; padding: 12px 0;">No matching options</div>`;
+    }
+
+    listContainer.innerHTML = html;
+}
+
+function onFabRequiredFilterSearchInput(val) {
+    if (!fabRequiredState.activePopupCol) return;
+    renderFabRequiredFilterCheckboxes(fabRequiredState.activePopupCol, val);
+}
+
+function fabRequiredFilterSelectAll(selectAll) {
+    const checkboxes = document.querySelectorAll('#fab-required-popup-checkbox-list input[type="checkbox"]');
+    checkboxes.forEach(chk => { chk.checked = selectAll; });
+}
+
+function renderFabRequiredNumericFilterUI(colKey) {
+    const numFilter = fabRequiredState.filters[colKey] || {};
+    const opSelect = document.getElementById('fab-required-popup-num-operator');
+    const val1Input = document.getElementById('fab-required-popup-num-val1');
+    const val2Input = document.getElementById('fab-required-popup-num-val2');
+    const val2Wrap = document.getElementById('fab-required-popup-num-val2-wrap');
+
+    const op = numFilter.operator || 'gte';
+    if (opSelect) opSelect.value = op;
+    if (val1Input) val1Input.value = numFilter.val1 !== undefined && numFilter.val1 !== null ? numFilter.val1 : '';
+    if (val2Input) val2Input.value = numFilter.val2 !== undefined && numFilter.val2 !== null ? numFilter.val2 : '';
+
+    if (val2Wrap) {
+        if (op === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function onFabRequiredNumericOperatorChange(val) {
+    const val2Wrap = document.getElementById('fab-required-popup-num-val2-wrap');
+    if (val2Wrap) {
+        if (val === 'between') val2Wrap.classList.remove('hidden');
+        else val2Wrap.classList.add('hidden');
+    }
+}
+
+function applyFabRequiredFilterCurrent() {
+    const colKey = fabRequiredState.activePopupCol;
+    if (!colKey) return;
+
+    if (isFabRequiredNumericCol(colKey)) {
+        const op = document.getElementById('fab-required-popup-num-operator')?.value || 'gte';
+        const v1Raw = document.getElementById('fab-required-popup-num-val1')?.value;
+        const v2Raw = document.getElementById('fab-required-popup-num-val2')?.value;
+
+        if (v1Raw === '' || v1Raw === undefined || v1Raw === null) {
+            delete fabRequiredState.filters[colKey];
+        } else {
+            fabRequiredState.filters[colKey] = {
+                operator: op,
+                val1: Number(v1Raw),
+                val2: (op === 'between' && v2Raw !== '') ? Number(v2Raw) : null
+            };
+        }
+    } else {
+        const checkboxes = document.querySelectorAll('#fab-required-popup-checkbox-list input[type="checkbox"]');
+        const checkedValues = new Set();
+        checkboxes.forEach(chk => {
+            if (chk.checked) checkedValues.add(chk.value);
+        });
+
+        const totalValues = fabRequiredState.distinctValues[colKey] || [];
+        if (checkedValues.size === totalValues.length || checkedValues.size === 0) {
+            delete fabRequiredState.filters[colKey];
+        } else {
+            fabRequiredState.filters[colKey] = checkedValues;
+        }
+    }
+
+    updateFabRequiredFilterBtnVisualState(colKey);
+    closeFabRequiredFilterPopup();
+    fabRequiredState.page = 1;
+    renderFilteredFabRequiredTable();
+}
+
+function clearFabRequiredFilterCurrent() {
+    const colKey = fabRequiredState.activePopupCol;
+    if (!colKey) return;
+
+    delete fabRequiredState.filters[colKey];
+    updateFabRequiredFilterBtnVisualState(colKey);
+    closeFabRequiredFilterPopup();
+    fabRequiredState.page = 1;
+    renderFilteredFabRequiredTable();
+}
+
+function clearAllFabRequiredFilters() {
+    fabRequiredState.filters = {
+        fabric_name: new Set(),
+        fabric_color: new Set(),
+        dia: null,
+        gsm: null,
+        consuming_products_count: null,
+        available_stock_kg: null,
+        required_fabric_kg: null,
+        allocated_fabric_kg: null,
+        remaining_fabric_kg: null,
+        shortage_kg: null,
+        coverage_pct: null,
+        status: new Set()
+    };
+
+    const cols = [
+        'fabric_name', 'fabric_color', 'dia', 'gsm', 'consuming_products_count',
+        'available_stock_kg', 'required_fabric_kg', 'allocated_fabric_kg',
+        'remaining_fabric_kg', 'shortage_kg', 'coverage_pct', 'status'
+    ];
+    cols.forEach(c => updateFabRequiredFilterBtnVisualState(c));
+
+    closeFabRequiredFilterPopup();
+    fabRequiredState.page = 1;
+    renderFilteredFabRequiredTable();
+}
+
+function updateFabRequiredFilterBtnVisualState(colKey) {
+    const btn = document.getElementById(`fab-required-filter-btn-${colKey}`);
+    const filter = fabRequiredState.filters[colKey];
+
+    let isFiltered = false;
+    if (filter) {
+        if (isFabRequiredNumericCol(colKey)) {
+            isFiltered = filter.val1 !== undefined && filter.val1 !== null;
+        } else if (filter instanceof Set) {
+            isFiltered = filter.size > 0;
+        }
+    }
+
+    if (btn) {
+        if (isFiltered) {
+            btn.classList.add('active');
+            btn.innerHTML = `<i class="fa-solid fa-filter-circle-xmark"></i>`;
+        } else {
+            btn.classList.remove('active');
+            btn.innerHTML = `<i class="fa-solid fa-filter"></i>`;
+        }
+    }
+
+    let anyActive = false;
+    Object.keys(fabRequiredState.filters).forEach(k => {
+        const f = fabRequiredState.filters[k];
+        if (f) {
+            if (isFabRequiredNumericCol(k) && f.val1 !== undefined && f.val1 !== null) anyActive = true;
+            else if (f instanceof Set && f.size > 0) anyActive = true;
+        }
+    });
+
+    const clearAllBtn = document.getElementById('fab-required-clear-all-filters-btn');
+    if (clearAllBtn) {
+        if (anyActive) clearAllBtn.classList.remove('hidden');
+        else clearAllBtn.classList.add('hidden');
+    }
+}
+
+async function toggleFabricPoolConsumers(poolKey, fabricName, fabricColor, dia, gsm, btn) {
+    const isExpanded = pendingPlanningState.expandedPools.has(poolKey);
+    if (isExpanded) {
+        pendingPlanningState.expandedPools.delete(poolKey);
+        const subRow = document.getElementById(`pool-subrow-${poolKey}`);
+        if (subRow) subRow.remove();
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+    } else {
+        pendingPlanningState.expandedPools.add(poolKey);
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-minus"></i>';
+
+        const parentTr = document.getElementById(`pool-row-${poolKey}`);
+        if (!parentTr) return;
+
+        const subTr = document.createElement('tr');
+        subTr.id = `pool-subrow-${poolKey}`;
+        subTr.innerHTML = `
+            <td colspan="14" style="padding: 8px 16px 12px 48px; background: rgba(0,0,0,0.18); border-bottom: 1px solid var(--border-color);">
+                <div id="pool-subrow-container-${poolKey}" style="padding: 4px 0;">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Loading consuming styles...
+                </div>
+            </td>
+        `;
+        parentTr.after(subTr);
+
+        try {
+            const params = new URLSearchParams({
+                plan_id: pendingPlanningState.plan_id,
+                fabric_name: fabricName,
+                fabric_color: fabricColor,
+                dia: dia
+            });
+            const res = await fetch(`/api/pending-qty-plan/pool-consumers?${params.toString()}`);
+            const data = await res.json();
+            const container = document.getElementById(`pool-subrow-container-${poolKey}`);
+            if (!container) return;
+
+            if (!data.success || !data.consumers || data.consumers.length === 0) {
+                container.innerHTML = `<div style="font-size: 11.5px; color: var(--text-muted);">No active consumer styles for this fabric pool.</div>`;
+                return;
+            }
+
+            let cHtml = `
+                <div style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">
+                    <i class="fa-solid fa-scissors"></i> Consuming Products & Allocation Breakdown for ${escapeHtml(fabricName)} / ${escapeHtml(fabricColor)}:
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; background: var(--bg-card); border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color);">
+                    <thead>
+                        <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border-color);">
+                            <th style="padding: 6px 10px; width: 60px; text-align: center;">Priority</th>
+                            <th style="padding: 6px 10px; text-align: left;">Product Type</th>
+                            <th style="padding: 6px 10px; text-align: left;">Product / Common Group</th>
+                            <th style="padding: 6px 10px; text-align: left;">Color</th>
+                            <th style="padding: 6px 10px; text-align: left;">Size</th>
+                            <th style="padding: 6px 10px; text-align: right;">Net Pending</th>
+                            <th style="padding: 6px 10px; text-align: right;">Req Fabric (KG)</th>
+                            <th style="padding: 6px 10px; text-align: right;">Allocated (KG)</th>
+                            <th style="padding: 6px 10px; text-align: right; color: #10b981;">Cuttable (Pcs)</th>
+                            <th style="padding: 6px 10px; text-align: right; color: #f59e0b;">Hold (Pcs)</th>
+                            <th style="padding: 6px 10px; text-align: center;">Alloc Type</th>
+                            <th style="padding: 6px 10px; text-align: center;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.consumers.forEach(c => {
+                cHtml += `
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 6px 10px; text-align: center;"><span class="badge" style="background: rgba(255,255,255,0.08); font-weight: 700;">${c.priority}</span></td>
+                        <td style="padding: 6px 10px;"><span class="badge" style="background: ${c.item_type === 'Common' ? '#8b5cf6' : '#6b7280'}; color: #fff; font-size: 10px; padding: 2px 5px;">${c.item_type}</span></td>
+                        <td style="padding: 6px 10px; font-weight: 500;">${escapeHtml(c.product_name)}</td>
+                        <td style="padding: 6px 10px;">${escapeHtml(c.color)}</td>
+                        <td style="padding: 6px 10px;">${escapeHtml(c.size)}</td>
+                        <td style="padding: 6px 10px; text-align: right; font-weight: 600;">${Math.round(c.net_pending_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right;">${c.required_fabric_kg.toFixed(2)}</td>
+                        <td style="padding: 6px 10px; text-align: right; font-weight: 600;">${c.allocated_fabric_kg.toFixed(2)}</td>
+                        <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: #10b981;">${Math.round(c.cuttable_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: right; color: #f59e0b;">${Math.round(c.hold_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: center;"><span class="badge" style="background: ${c.allocation_type === 'MANUAL' ? '#3b82f6' : 'rgba(255,255,255,0.08)'}; color: #fff; font-size: 9.5px; padding: 1px 5px;">${c.allocation_type}</span></td>
+                        <td style="padding: 6px 10px; text-align: center;">${renderStatusBadge(c.status)}</td>
+                    </tr>
+                `;
+            });
+
+            cHtml += `</tbody></table>`;
+            container.innerHTML = cHtml;
+        } catch (err) {
+            console.error("Error loading pool consumers:", err);
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// PRIORITY MODAL HANDLERS
+// -------------------------------------------------------------
+function openPendingPriorityModal(lineId, skuTitle, currentPriority) {
+    document.getElementById('modal-priority-line-id').value = lineId;
+    document.getElementById('modal-priority-sku-title').textContent = skuTitle;
+    document.getElementById('modal-priority-sku-sub').textContent = `Current Priority: ${currentPriority}`;
+    document.getElementById('modal-priority-input').value = currentPriority;
+    document.getElementById('pending-priority-modal')?.classList.remove('hidden');
+}
+
+function closePendingPriorityModal() {
+    document.getElementById('pending-priority-modal')?.classList.add('hidden');
+}
+
+async function savePendingLinePriority() {
+    const lineId = document.getElementById('modal-priority-line-id').value;
+    const priorityVal = parseInt(document.getElementById('modal-priority-input').value);
+
+    if (!lineId || isNaN(priorityVal) || priorityVal < 1) {
+        showToast('Warning', 'Please enter a valid positive priority number.', 'warning');
+        return;
+    }
+
+    showLoader(true, "Updating priority and recalculating allocations...");
+    try {
+        const res = await fetch('/api/pending-qty-plan/update-priority', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                plan_id: pendingPlanningState.plan_id,
+                line_id: lineId,
+                priority: priorityVal
+            })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            closePendingPriorityModal();
+            showToast('Priority Updated', 'Priority updated and allocations recalculated successfully!', 'success');
+            await refreshPendingPlanningSummary();
+            await loadActivePendingSubTabTable();
+        } else {
+            showToast('Error', data.message || 'Failed to update priority.', 'error');
+        }
+    } catch (err) {
+        console.error("Error saving priority:", err);
+        showToast('Error', 'Network error updating priority.', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+// -------------------------------------------------------------
+// MANUAL ALLOCATION MODAL HANDLERS
+// -------------------------------------------------------------
+async function openPendingManualAllocModal(fabricName, fabricColor, dia, gsm, availStock) {
+    pendingPlanningState.currentPoolForAlloc = {
+        fabric_name: fabricName,
+        fabric_color: fabricColor,
+        dia: dia,
+        gsm: gsm,
+        available_stock_kg: availStock
+    };
+
+    document.getElementById('modal-alloc-pool-title').textContent = `${fabricName} / ${fabricColor} (Dia: ${dia}, GSM: ${gsm || '-'})`;
+    document.getElementById('modal-alloc-avail-stock').textContent = `${availStock.toFixed(2)} KG`;
+    document.getElementById('modal-alloc-error-banner').classList.add('hidden');
+
+    const tbody = document.getElementById('modal-alloc-consumers-tbody');
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading consumers...</td></tr>`;
+
+    document.getElementById('pending-manual-allocation-modal')?.classList.remove('hidden');
+
+    try {
+        const params = new URLSearchParams({
+            plan_id: pendingPlanningState.plan_id,
+            fabric_name: fabricName,
+            fabric_color: fabricColor,
+            dia: dia
+        });
+        const res = await fetch(`/api/pending-qty-plan/pool-consumers?${params.toString()}`);
+        const data = await res.json();
+
+        if (!data.success || !data.consumers || data.consumers.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px; color: var(--text-muted);">No active consumer styles found.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        data.consumers.forEach(c => {
+            const currentAlloc = c.manual_allocated_kg !== null ? c.manual_allocated_kg : c.allocated_fabric_kg;
+            html += `
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="text-align: center;"><span class="badge" style="background: rgba(255,255,255,0.08);">${c.priority}</span></td>
+                    <td><span class="badge" style="background: ${c.item_type === 'Common' ? '#8b5cf6' : '#6b7280'}; color: #fff; font-size: 10px; padding: 2px 5px;">${c.item_type}</span></td>
+                    <td style="font-weight: 500;">${escapeHtml(c.product_name)}</td>
+                    <td>${escapeHtml(c.color)}</td>
+                    <td>${escapeHtml(c.size)}</td>
+                    <td style="text-align: right; font-weight: 600;">${Math.round(c.net_pending_qty).toLocaleString()}</td>
+                    <td style="text-align: right;">${c.required_fabric_kg.toFixed(2)}</td>
+                    <td style="text-align: right;">
+                        <input type="number" class="form-input modal-alloc-input" data-line-id="${c.line_id}" min="0" max="${availStock}" step="0.01" value="${currentAlloc.toFixed(2)}" oninput="recalcModalAllocationTotal()" style="width: 110px; text-align: right; height: 30px; font-size: 12px;">
+                    </td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+        recalcModalAllocationTotal();
+    } catch (err) {
+        console.error("Error loading consumers for manual alloc:", err);
+    }
+}
+
+function closePendingManualAllocModal() {
+    document.getElementById('pending-manual-allocation-modal')?.classList.add('hidden');
+}
+
+function recalcModalAllocationTotal() {
+    const inputs = document.querySelectorAll('.modal-alloc-input');
+    let total = 0;
+    inputs.forEach(inp => {
+        const val = parseFloat(inp.value) || 0;
+        total += val;
+    });
+
+    const avail = pendingPlanningState.currentPoolForAlloc ? pendingPlanningState.currentPoolForAlloc.available_stock_kg : 0;
+    const remaining = Math.max(0, avail - total);
+
+    document.getElementById('modal-alloc-total-allocated').textContent = `${total.toFixed(2)} KG`;
+    document.getElementById('modal-alloc-remaining-stock').textContent = `${remaining.toFixed(2)} KG`;
+
+    const errorBanner = document.getElementById('modal-alloc-error-banner');
+    const saveBtn = document.getElementById('modal-alloc-save-btn');
+
+    if (total > avail + 0.001) {
+        errorBanner.classList.remove('hidden');
+        errorBanner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Total allocation (${total.toFixed(2)} KG) exceeds available stock (${avail.toFixed(2)} KG)!`;
+        if (saveBtn) saveBtn.disabled = true;
+    } else {
+        errorBanner.classList.add('hidden');
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+function resetModalManualAllocations() {
+    const inputs = document.querySelectorAll('.modal-alloc-input');
+    inputs.forEach(inp => {
+        inp.value = '0.00';
+    });
+    recalcModalAllocationTotal();
+}
+
+async function savePendingManualAllocation() {
+    if (!pendingPlanningState.currentPoolForAlloc) return;
+
+    const inputs = document.querySelectorAll('.modal-alloc-input');
+    const allocations = [];
+    inputs.forEach(inp => {
+        const lineId = parseInt(inp.dataset.lineId);
+        const val = parseFloat(inp.value) || 0;
+        allocations.push({
+            line_id: lineId,
+            manual_allocated_kg: val
+        });
+    });
+
+    showLoader(true, "Applying manual allocations and recalculating plan...");
+    try {
+        const payload = {
+            plan_id: pendingPlanningState.plan_id,
+            fabric_name: pendingPlanningState.currentPoolForAlloc.fabric_name,
+            fabric_color: pendingPlanningState.currentPoolForAlloc.fabric_color,
+            dia: pendingPlanningState.currentPoolForAlloc.dia,
+            gsm: pendingPlanningState.currentPoolForAlloc.gsm,
+            allocations: allocations
+        };
+
+        const res = await fetch('/api/pending-qty-plan/manual-allocation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            closePendingManualAllocModal();
+            showToast('Saved', 'Manual allocation applied and plan recalculated successfully!', 'success');
+            await refreshPendingPlanningSummary();
+            await loadActivePendingSubTabTable();
+        } else {
+            showToast('Validation Error', data.message || 'Failed to save manual allocation.', 'error');
+        }
+    } catch (err) {
+        console.error("Error saving manual allocation:", err);
+        showToast('Error', 'Network error saving allocation.', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+// -------------------------------------------------------------
+// PLAN CONFIRMATION & EXPORT
+// -------------------------------------------------------------
+async function confirmPendingQtyPlan() {
+    if (!pendingPlanningState.plan_id) {
+        showToast('Info', 'Please calculate a plan first before confirming.', 'info');
+        return;
+    }
+
+    if (!confirm("Are you sure you want to confirm and freeze this Pending Qty Plan?")) {
+        return;
+    }
+
+    showLoader(true, "Confirming plan...");
+    try {
+        const res = await fetch('/api/pending-qty-plan/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan_id: pendingPlanningState.plan_id })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Plan Confirmed', 'Pending Qty Plan confirmed and frozen successfully!', 'success');
+            await refreshPendingPlanningSummary();
+        } else {
+            showToast('Error', data.message || 'Failed to confirm plan.', 'error');
+        }
+    } catch (err) {
+        console.error("Error confirming plan:", err);
+        showToast('Error', 'Network error confirming plan.', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+function exportCurrentPendingTabExcel() {
+    if (!pendingPlanningState.plan_id) {
+        showToast('Info', 'Please calculate a plan before exporting.', 'info');
+        return;
+    }
+
+    const filters = getPendingFilterValues();
+    const params = new URLSearchParams({
+        plan_id: pendingPlanningState.plan_id,
+        tab: pendingPlanningState.activeSubTab,
+        ...filters
+    });
+
+    window.location.href = `/api/pending-qty-plan/export?${params.toString()}`;
+}
+
+// -------------------------------------------------------------
+// UI HELPERS (STATUS BADGES, PAGINATION)
+// -------------------------------------------------------------
+function renderStatusBadge(status) {
+    if (!status) return `<span class="badge" style="background: #6b7280; color: #fff; font-size: 10px; padding: 2px 6px;">-</span>`;
+
+    let bg = '#6b7280';
+    if (status === 'FULL' || status === 'ENOUGH') {
+        bg = '#10b981';
+    } else if (status === 'PARTIAL') {
+        bg = '#f59e0b';
+    } else if (status === 'FABRIC SHORTAGE' || status === 'SHORTAGE') {
+        bg = '#ef4444';
+    } else if (status === 'NO PENDING') {
+        bg = '#6b7280';
+    } else if (status === 'HOLD') {
+        bg = '#d97706';
+    }
+
+    return `<span class="badge" style="background: ${bg}; color: #fff; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">${status}</span>`;
+}
+
+function changePendingPageSize(newSize) {
+    const val = parseInt(newSize);
+    pendingPlanningState.per_page = val;
+    pendingPlanningState.page = 1;
+    loadActivePendingSubTabTable();
+}
+
+function renderPendingPagination(containerId, totalCount, currentPage, perPage, fetchFunc) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (totalCount === 0) {
+        container.innerHTML = `<div>Showing 0 of 0 records</div><div></div>`;
+        return;
+    }
+
+    const isAll = (perPage === -1 || perPage >= 100000);
+    const effectivePerPage = isAll ? totalCount : perPage;
+    const totalPages = isAll ? 1 : Math.ceil(totalCount / effectivePerPage);
+    const start = isAll ? 1 : (currentPage - 1) * effectivePerPage + 1;
+    const end = isAll ? totalCount : Math.min(currentPage * effectivePerPage, totalCount);
+
+    let html = `
+        <div style="color: var(--text-secondary); font-size: 12px; display: flex; align-items: center; gap: 16px;">
+            <div>
+                Showing <strong>${start}</strong> to <strong>${end}</strong> of <strong>${totalCount}</strong> records
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: var(--text-secondary); font-size: 11.5px;">Rows per page:</span>
+                <select class="form-select" onchange="changePendingPageSize(this.value)" style="height: 28px; padding: 2px 8px; font-size: 12px; width: 80px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+                    <option value="25" ${perPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${perPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${perPage === 100 ? 'selected' : ''}>100</option>
+                    <option value="250" ${perPage === 250 ? 'selected' : ''}>250</option>
+                    <option value="500" ${perPage === 500 ? 'selected' : ''}>500</option>
+                    <option value="1000" ${perPage === 1000 ? 'selected' : ''}>1000</option>
+                    <option value="-1" ${isAll ? 'selected' : ''}>All</option>
+                </select>
+            </div>
+        </div>
+        <div style="display: flex; gap: 4px; align-items: center;">
+            <button class="btn btn-sm btn-outline" ${currentPage <= 1 || isAll ? 'disabled' : ''} onclick="${fetchFunc.name}(1)" title="First Page">
+                <i class="fa-solid fa-angles-left"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" ${currentPage <= 1 || isAll ? 'disabled' : ''} onclick="${fetchFunc.name}(${currentPage - 1})" title="Previous Page">
+                <i class="fa-solid fa-angle-left"></i>
+            </button>
+            <span style="padding: 0 8px; font-weight: 600; font-size: 12px;">Page ${currentPage} of ${totalPages}</span>
+            <button class="btn btn-sm btn-outline" ${currentPage >= totalPages || isAll ? 'disabled' : ''} onclick="${fetchFunc.name}(${currentPage + 1})" title="Next Page">
+                <i class="fa-solid fa-angle-right"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" ${currentPage >= totalPages || isAll ? 'disabled' : ''} onclick="${fetchFunc.name}(${totalPages})" title="Last Page">
+                <i class="fa-solid fa-angles-right"></i>
+            </button>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// =====================================================================
+// LEAD DAYS MASTER MODULE (PREPARATION FOR FUTURE BASE STOCK MODULE)
+// STRICTLY ISOLATED JAVASCRIPT & STATE MANAGEMENT
+// =====================================================================
+const leadDaysState = {
+    activeSubTab: 'fabric', // 'fabric' | 'production'
+    fabricList: [],
+    productionList: {
+        standalone: [],
+        common_production: []
+    },
+    fabricSearch: '',
+    fabricStatus: 'all', // 'all' | 'set' | 'unset'
+    productionSearch: '',
+    productionType: 'all', // 'all' | 'Stand Alone' | 'Common Production'
+    productionStatus: 'all', // 'all' | 'set' | 'unset'
+    editing: {
+        fabric: {}, // fabricId -> true
+        standalone: {}, // productId -> true
+        common_production: {} // commonId -> true
+    }
+};
+
+function initLeadDaysMaster() {
+    if (leadDaysState.activeSubTab === 'fabric') {
+        fetchFabricLeadDaysMaster();
+    } else {
+        fetchProductionLeadDaysMaster();
+    }
+}
+
+function switchLeadDaysSubTab(subTab) {
+    leadDaysState.activeSubTab = subTab;
+    const btnFab = document.getElementById('lead-days-subtab-fabric');
+    const btnProd = document.getElementById('lead-days-subtab-production');
+    const secFab = document.getElementById('fabric-lead-days-section');
+    const secProd = document.getElementById('production-lead-days-section');
+
+    if (subTab === 'fabric') {
+        if (btnFab) { btnFab.className = 'btn btn-primary'; }
+        if (btnProd) { btnProd.className = 'btn btn-outline'; }
+        if (secFab) { secFab.classList.remove('hidden'); }
+        if (secProd) { secProd.classList.add('hidden'); }
+        fetchFabricLeadDaysMaster();
+    } else {
+        if (btnFab) { btnFab.className = 'btn btn-outline'; }
+        if (btnProd) { btnProd.className = 'btn btn-primary'; }
+        if (secFab) { secFab.classList.add('hidden'); }
+        if (secProd) { secProd.classList.remove('hidden'); }
+        fetchProductionLeadDaysMaster();
+    }
+}
+
+async function fetchFabricLeadDaysMaster() {
+    const tbody = document.getElementById('fabric-lead-days-table-body');
+    const loader = document.getElementById('fabric-lead-days-loader');
+    const emptyEl = document.getElementById('fabric-lead-days-empty');
+
+    if (loader) loader.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/masters/lead-days/fabric');
+        const data = await res.json();
+        if (loader) loader.classList.add('hidden');
+
+        if (data.success && data.fabrics) {
+            leadDaysState.fabricList = data.fabrics;
+            renderFabricLeadDaysTable();
+        } else {
+            showToast('Error', data.message || 'Failed to load fabric lead days', 'error');
+        }
+    } catch (err) {
+        if (loader) loader.classList.add('hidden');
+        console.error("Error loading fabric lead days:", err);
+        showToast('Error', 'Connection error while loading fabric lead days', 'error');
+    }
+}
+
+function handleFabricLeadDaysSearch() {
+    const searchInput = document.getElementById('fabric-lead-days-search');
+    const statusSelect = document.getElementById('fabric-lead-days-filter-status');
+    leadDaysState.fabricSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    leadDaysState.fabricStatus = statusSelect ? statusSelect.value : 'all';
+    renderFabricLeadDaysTable();
+}
+
+function renderFabricLeadDaysTable() {
+    const tbody = document.getElementById('fabric-lead-days-table-body');
+    const emptyEl = document.getElementById('fabric-lead-days-empty');
+    if (!tbody) return;
+
+    const term = leadDaysState.fabricSearch;
+    const stat = leadDaysState.fabricStatus;
+
+    const filtered = leadDaysState.fabricList.filter(item => {
+        const name = (item.fabric_name || '').toLowerCase();
+        const gsm = String(item.gsm || '');
+        const uom = (item.uom || '').toLowerCase();
+        const dias = (item.dias || []).join(' ');
+
+        if (term) {
+            const matches = name.includes(term) || gsm.includes(term) || uom.includes(term) || dias.includes(term);
+            if (!matches) return false;
+        }
+
+        const isSet = item.lead_days !== null && item.lead_days !== undefined;
+        if (stat === 'set' && !isSet) return false;
+        if (stat === 'unset' && isSet) return false;
+
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    let html = '';
+    filtered.forEach(item => {
+        const isEditing = leadDaysState.editing.fabric[item.id] === true;
+        const diasStr = item.dias && item.dias.length > 0 ? item.dias.map(d => `${d}"`).join(', ') : '-';
+        const isSet = item.lead_days !== null && item.lead_days !== undefined;
+
+        let leadDaysDisplay = '';
+        let actionDisplay = '';
+
+        if (isEditing) {
+            leadDaysDisplay = `
+                <input type="number" id="input-fab-lead-${item.id}" value="${isSet ? item.lead_days : ''}" placeholder="Days" min="0" step="1"
+                    style="width: 80px; padding: 4px 8px; font-size: 13px; text-align: center; background: var(--bg-primary); border: 1px solid var(--accent-blue); color: var(--text-primary); border-radius: var(--radius-sm);"
+                    onkeydown="if(event.key==='Enter') saveFabricLeadDay(${item.id})">
+            `;
+            actionDisplay = `
+                <button class="btn btn-xs btn-primary" onclick="saveFabricLeadDay(${item.id})" style="padding: 3px 10px; margin-right: 4px;">
+                    <i class="fa-solid fa-check"></i> Save
+                </button>
+                <button class="btn btn-xs btn-outline" onclick="cancelEditFabricLeadDay(${item.id})" style="padding: 3px 8px;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+        } else {
+            if (isSet) {
+                leadDaysDisplay = `
+                    <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 700; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        <i class="fa-solid fa-business-time" style="font-size: 11px; margin-right: 4px;"></i> ${item.lead_days} Days
+                    </span>
+                `;
+            } else {
+                leadDaysDisplay = `
+                    <span class="badge" style="background: rgba(148, 163, 184, 0.12); color: var(--text-muted); font-size: 11.5px; padding: 3px 8px; border-radius: 6px;">
+                        Not Set
+                    </span>
+                `;
+            }
+            actionDisplay = `
+                <button class="btn btn-xs btn-outline" onclick="startEditFabricLeadDay(${item.id})" style="padding: 3px 10px;">
+                    <i class="fa-solid fa-pen-to-square" style="margin-right: 3px;"></i> Edit
+                </button>
+            `;
+        }
+
+        html += `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.fabric_name)}</td>
+                <td style="text-align: right; color: var(--text-secondary);">${item.gsm || '-'}</td>
+                <td style="text-align: center; color: var(--text-secondary);"><span class="badge" style="background: rgba(255,255,255,0.05);">${escapeHtml(diasStr)}</span></td>
+                <td style="text-align: center; color: var(--text-secondary); font-size: 12px;">${escapeHtml(item.uom)}</td>
+                <td style="text-align: center;">${leadDaysDisplay}</td>
+                <td style="text-align: center;">${actionDisplay}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function startEditFabricLeadDay(id) {
+    leadDaysState.editing.fabric[id] = true;
+    renderFabricLeadDaysTable();
+    setTimeout(() => {
+        const el = document.getElementById(`input-fab-lead-${id}`);
+        if (el) el.focus();
+    }, 50);
+}
+
+function cancelEditFabricLeadDay(id) {
+    delete leadDaysState.editing.fabric[id];
+    renderFabricLeadDaysTable();
+}
+
+async function saveFabricLeadDay(id) {
+    const input = document.getElementById(`input-fab-lead-${id}`);
+    if (!input) return;
+
+    const valStr = input.value.trim();
+    let val = null;
+
+    if (valStr !== '') {
+        const num = Number(valStr);
+        if (!Number.isInteger(num) || num < 0) {
+            showToast('Validation Error', 'Lead Days must be a whole number (0 or greater).', 'warning');
+            input.focus();
+            return;
+        }
+        val = num;
+    }
+
+    try {
+        const res = await fetch('/api/masters/lead-days/fabric', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fabric_id: id, lead_days: val })
+        });
+        const data = await res.json();
+        if (data.success) {
+            const item = leadDaysState.fabricList.find(f => f.id === id);
+            if (item) item.lead_days = val;
+            delete leadDaysState.editing.fabric[id];
+            renderFabricLeadDaysTable();
+            showToast('Success', 'Fabric Lead Days saved successfully.', 'success');
+        } else {
+            showToast('Error', data.message || 'Failed to save fabric lead days', 'error');
+        }
+    } catch (err) {
+        console.error("Error saving fabric lead days:", err);
+        showToast('Error', 'Connection error while saving fabric lead days', 'error');
+    }
+}
+
+async function fetchProductionLeadDaysMaster() {
+    const tbody = document.getElementById('production-lead-days-table-body');
+    const loader = document.getElementById('production-lead-days-loader');
+    const emptyEl = document.getElementById('production-lead-days-empty');
+
+    if (loader) loader.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/masters/lead-days/production');
+        const data = await res.json();
+        if (loader) loader.classList.add('hidden');
+
+        if (data.success) {
+            leadDaysState.productionList = {
+                standalone: data.standalone || [],
+                common_production: data.common_production || []
+            };
+            renderProductionLeadDaysTable();
+        } else {
+            showToast('Error', data.message || 'Failed to load production lead days', 'error');
+        }
+    } catch (err) {
+        if (loader) loader.classList.add('hidden');
+        console.error("Error loading production lead days:", err);
+        showToast('Error', 'Connection error while loading production lead days', 'error');
+    }
+}
+
+function handleProductionLeadDaysSearch() {
+    const searchInput = document.getElementById('production-lead-days-search');
+    const typeSelect = document.getElementById('production-lead-days-filter-type');
+    const statusSelect = document.getElementById('production-lead-days-filter-status');
+    leadDaysState.productionSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    leadDaysState.productionType = typeSelect ? typeSelect.value : 'all';
+    leadDaysState.productionStatus = statusSelect ? statusSelect.value : 'all';
+    renderProductionLeadDaysTable();
+}
+
+function renderProductionLeadDaysTable() {
+    const tbody = document.getElementById('production-lead-days-table-body');
+    const emptyEl = document.getElementById('production-lead-days-empty');
+    if (!tbody) return;
+
+    const term = leadDaysState.productionSearch;
+    const typeFilter = leadDaysState.productionType;
+    const statFilter = leadDaysState.productionStatus;
+
+    let combined = [];
+
+    // Stand Alone rows
+    if (typeFilter === 'all' || typeFilter === 'Stand Alone') {
+        leadDaysState.productionList.standalone.forEach(item => {
+            combined.push({
+                rowType: 'standalone',
+                id: item.id,
+                type: 'Stand Alone',
+                name: item.name,
+                code: item.code || '-',
+                member_count: null,
+                member_products: null,
+                lead_days: item.lead_days
+            });
+        });
+    }
+
+    // Common Production rows
+    if (typeFilter === 'all' || typeFilter === 'Common Production') {
+        leadDaysState.productionList.common_production.forEach(item => {
+            combined.push({
+                rowType: 'common_production',
+                id: item.id,
+                type: 'Common Production',
+                name: item.name,
+                code: null,
+                member_count: item.member_count,
+                member_products: item.member_products || [],
+                lead_days: item.lead_days
+            });
+        });
+    }
+
+    // Filter
+    const filtered = combined.filter(item => {
+        const name = (item.name || '').toLowerCase();
+        const code = (item.code || '').toLowerCase();
+        const type = (item.type || '').toLowerCase();
+
+        if (term) {
+            const matches = name.includes(term) || code.includes(term) || type.includes(term);
+            if (!matches) return false;
+        }
+
+        const isSet = item.lead_days !== null && item.lead_days !== undefined;
+        if (statFilter === 'set' && !isSet) return false;
+        if (statFilter === 'unset' && isSet) return false;
+
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    let html = '';
+    filtered.forEach(item => {
+        const isCommon = item.rowType === 'common_production';
+        const isEditing = isCommon ? (leadDaysState.editing.common_production[item.id] === true) : (leadDaysState.editing.standalone[item.id] === true);
+        const isSet = item.lead_days !== null && item.lead_days !== undefined;
+
+        let leadDaysDisplay = '';
+        let actionDisplay = '';
+
+        if (isEditing) {
+            leadDaysDisplay = `
+                <input type="number" id="input-prod-lead-${item.rowType}-${item.id}" value="${isSet ? item.lead_days : ''}" placeholder="Days" min="0" step="1"
+                    style="width: 80px; padding: 4px 8px; font-size: 13px; text-align: center; background: var(--bg-primary); border: 1px solid var(--accent-blue); color: var(--text-primary); border-radius: var(--radius-sm);"
+                    onkeydown="if(event.key==='Enter') saveProductionLeadDay('${item.rowType}', ${item.id})">
+            `;
+            actionDisplay = `
+                <button class="btn btn-xs btn-primary" onclick="saveProductionLeadDay('${item.rowType}', ${item.id})" style="padding: 3px 10px; margin-right: 4px;">
+                    <i class="fa-solid fa-check"></i> Save
+                </button>
+                <button class="btn btn-xs btn-outline" onclick="cancelEditProductionLeadDay('${item.rowType}', ${item.id})" style="padding: 3px 8px;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+        } else {
+            if (isSet) {
+                leadDaysDisplay = `
+                    <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 700; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        <i class="fa-solid fa-business-time" style="font-size: 11px; margin-right: 4px;"></i> ${item.lead_days} Days
+                    </span>
+                `;
+            } else {
+                leadDaysDisplay = `
+                    <span class="badge" style="background: rgba(148, 163, 184, 0.12); color: var(--text-muted); font-size: 11.5px; padding: 3px 8px; border-radius: 6px;">
+                        Not Set
+                    </span>
+                `;
+            }
+            actionDisplay = `
+                <button class="btn btn-xs btn-outline" onclick="startEditProductionLeadDay('${item.rowType}', ${item.id})" style="padding: 3px 10px;">
+                    <i class="fa-solid fa-pen-to-square" style="margin-right: 3px;"></i> Edit
+                </button>
+            `;
+        }
+
+        // Details column
+        let detailsDisplay = '';
+        if (isCommon) {
+            const memberTooltip = item.member_products && item.member_products.length > 0 ? escapeHtml(item.member_products.join(', ')) : 'No active members';
+            detailsDisplay = `
+                <span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #c084fc; font-weight: 600; padding: 3px 8px; border-radius: 6px;" title="Products: ${memberTooltip}">
+                    <i class="fa-solid fa-cubes" style="margin-right: 4px;"></i> ${item.member_count} Members
+                </span>
+            `;
+        } else {
+            detailsDisplay = `<span style="color: var(--text-secondary); font-size: 12.5px;">${escapeHtml(item.code)}</span>`;
+        }
+
+        const typeBadge = isCommon ?
+            `<span class="badge" style="background: #8b5cf6; color: #fff; font-size: 11px; padding: 3px 8px;"><i class="fa-solid fa-layer-group" style="margin-right: 3px;"></i> Common Production</span>` :
+            `<span class="badge" style="background: #64748b; color: #fff; font-size: 11px; padding: 3px 8px;"><i class="fa-solid fa-shirt" style="margin-right: 3px;"></i> Stand Alone</span>`;
+
+        html += `
+            <tr style="border-bottom: 1px solid var(--border-color); ${isCommon ? 'background: rgba(139, 92, 246, 0.02);' : ''}">
+                <td style="text-align: center;">${typeBadge}</td>
+                <td style="font-weight: 600; color: ${isCommon ? '#a78bfa' : 'var(--text-primary)'};">${escapeHtml(item.name)}</td>
+                <td style="color: var(--text-secondary);">${detailsDisplay}</td>
+                <td style="text-align: center;">${leadDaysDisplay}</td>
+                <td style="text-align: center;">${actionDisplay}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function startEditProductionLeadDay(type, id) {
+    if (type === 'common_production') {
+        leadDaysState.editing.common_production[id] = true;
+    } else {
+        leadDaysState.editing.standalone[id] = true;
+    }
+    renderProductionLeadDaysTable();
+    setTimeout(() => {
+        const el = document.getElementById(`input-prod-lead-${type}-${id}`);
+        if (el) el.focus();
+    }, 50);
+}
+
+function cancelEditProductionLeadDay(type, id) {
+    if (type === 'common_production') {
+        delete leadDaysState.editing.common_production[id];
+    } else {
+        delete leadDaysState.editing.standalone[id];
+    }
+    renderProductionLeadDaysTable();
+}
+
+async function saveProductionLeadDay(type, id) {
+    const input = document.getElementById(`input-prod-lead-${type}-${id}`);
+    if (!input) return;
+
+    const valStr = input.value.trim();
+    let val = null;
+
+    if (valStr !== '') {
+        const num = Number(valStr);
+        if (!Number.isInteger(num) || num < 0) {
+            showToast('Validation Error', 'Lead Days must be a whole number (0 or greater).', 'warning');
+            input.focus();
+            return;
+        }
+        val = num;
+    }
+
+    try {
+        const res = await fetch('/api/masters/lead-days/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: type, id: id, lead_days: val })
+        });
+        const data = await res.json();
+        if (data.success) {
+            if (type === 'common_production') {
+                const item = leadDaysState.productionList.common_production.find(c => c.id === id);
+                if (item) item.lead_days = val;
+                delete leadDaysState.editing.common_production[id];
+            } else {
+                const item = leadDaysState.productionList.standalone.find(s => s.id === id);
+                if (item) item.lead_days = val;
+                delete leadDaysState.editing.standalone[id];
+            }
+            renderProductionLeadDaysTable();
+            showToast('Success', 'Production Lead Days saved successfully.', 'success');
+        } else {
+            showToast('Error', data.message || 'Failed to save production lead days', 'error');
+        }
+    } catch (err) {
+        console.error("Error saving production lead days:", err);
+        showToast('Error', 'Connection error while saving production lead days', 'error');
+    }
+}
+
+function exportLeadDaysExcel() {
+    if (leadDaysState.activeSubTab === 'fabric') {
+        const rows = leadDaysState.fabricList.map(f => ({
+            'Fabric Name': f.fabric_name,
+            'GSM': f.gsm || '-',
+            'DIA': f.dias && f.dias.length > 0 ? f.dias.join(', ') : '-',
+            'UOM': f.uom || 'KGS',
+            'Lead Days': f.lead_days !== null && f.lead_days !== undefined ? f.lead_days : 'Not Set'
+        }));
+        if (typeof XLSX !== 'undefined') {
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Fabric Lead Days');
+            XLSX.writeFile(wb, `Fabric_Lead_Days_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } else {
+            showToast('Info', 'Export ready for ' + rows.length + ' fabrics', 'info');
+        }
+    } else {
+        const standaloneRows = leadDaysState.productionList.standalone.map(s => ({
+            'Type': 'Stand Alone',
+            'Name': s.name,
+            'Code / Details': s.code || '-',
+            'Lead Days': s.lead_days !== null && s.lead_days !== undefined ? s.lead_days : 'Not Set'
+        }));
+        const commonRows = leadDaysState.productionList.common_production.map(c => ({
+            'Type': 'Common Production',
+            'Name': c.name,
+            'Code / Details': `${c.member_count} Members: ${(c.member_products || []).join(', ')}`,
+            'Lead Days': c.lead_days !== null && c.lead_days !== undefined ? c.lead_days : 'Not Set'
+        }));
+        const rows = [...standaloneRows, ...commonRows];
+        if (typeof XLSX !== 'undefined') {
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Production Lead Days');
+            XLSX.writeFile(wb, `Production_Lead_Days_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } else {
+            showToast('Info', 'Export ready for ' + rows.length + ' production items', 'info');
+        }
+    }
+}
+
+
