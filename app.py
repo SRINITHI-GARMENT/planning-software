@@ -11500,6 +11500,7 @@ def api_pending_qty_plan_pool_consumers():
     fabric_name = request.args.get('fabric_name', '').strip()
     fabric_color = request.args.get('fabric_color', '').strip()
     dia = request.args.get('dia', 0.0)
+    gsm = request.args.get('gsm')
 
     if not plan_id or not fabric_name:
         return jsonify({'success': False, 'message': 'plan_id and fabric_name are required.'}), 400
@@ -11507,7 +11508,8 @@ def api_pending_qty_plan_pool_consumers():
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        data = get_fabric_pool_consumers(cur, int(plan_id), fabric_name, fabric_color, float(dia))
+        gsm_val = int(gsm) if gsm and str(gsm).isdigit() else None
+        data = get_fabric_pool_consumers(cur, int(plan_id), fabric_name, fabric_color, float(dia), gsm=gsm_val)
         return jsonify(data)
     except Exception as e:
         logger.error(f"Error fetching pool consumers: {e}", exc_info=True)

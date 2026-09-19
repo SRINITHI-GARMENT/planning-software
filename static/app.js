@@ -16919,6 +16919,7 @@ const pendingPlanningState = {
         color: new Set(),
         size: new Set(),
         status: new Set(),
+        remark: new Set(),
         requirement_qty: null,
         fg_qty: null,
         wip_qty: null,
@@ -16932,7 +16933,8 @@ const pendingPlanningState = {
         product_name: [],
         color: [],
         size: [],
-        status: []
+        status: [],
+        remark: []
     },
     activePopupCol: null,
     page: 1,
@@ -17117,10 +17119,12 @@ function switchPendingSubTab(subTabId) {
     document.getElementById('pending-subtab-btn-pending')?.classList.remove('active');
     document.getElementById('pending-subtab-btn-cutting')?.classList.remove('active');
     document.getElementById('pending-subtab-btn-fabric')?.classList.remove('active');
+    document.getElementById('pending-subtab-btn-excel')?.classList.remove('active');
 
     document.getElementById('pending-subtab-view-pending')?.classList.add('hidden');
     document.getElementById('pending-subtab-view-cutting')?.classList.add('hidden');
     document.getElementById('pending-subtab-view-fabric')?.classList.add('hidden');
+    document.getElementById('pending-subtab-view-excel')?.classList.add('hidden');
 
     if (subTabId === 'pending-plan') {
         document.getElementById('pending-subtab-btn-pending')?.classList.add('active');
@@ -17131,6 +17135,9 @@ function switchPendingSubTab(subTabId) {
     } else if (subTabId === 'fab-required') {
         document.getElementById('pending-subtab-btn-fabric')?.classList.add('active');
         document.getElementById('pending-subtab-view-fabric')?.classList.remove('hidden');
+    } else if (subTabId === 'excel-planning') {
+        document.getElementById('pending-subtab-btn-excel')?.classList.add('active');
+        document.getElementById('pending-subtab-view-excel')?.classList.remove('hidden');
     }
 
     pendingPlanningState.page = 1;
@@ -17146,12 +17153,41 @@ async function loadActivePendingSubTabTable() {
         await loadCuttingPlanTable(1);
     } else if (pendingPlanningState.activeSubTab === 'fab-required') {
         await loadFabRequiredTable(pendingPlanningState.page);
+    } else if (pendingPlanningState.activeSubTab === 'excel-planning') {
+        renderExcelPlanningTab();
     }
 }
 
 // -------------------------------------------------------------
 // TAB 1: PENDING QTY PLAN TABLE (EXCEL-STYLE IN-MEMORY FILTERING)
 // -------------------------------------------------------------
+
+function getPendingRowRemark(r) {
+    const net = Number(r.net_pending_qty) || 0;
+    const req = Number(r.requirement_qty) || 0;
+    if (net <= 0) {
+        return 'NO PENDING';
+    } else if (req > net && net > 0) {
+        return 'PARTIAL PENDING';
+    } else {
+        return 'FULL PENDING';
+    }
+}
+
+function renderRemarkBadge(remark) {
+    if (!remark) return `<span class="badge" style="background: #6b7280; color: #fff; font-size: 10px; padding: 2px 6px;">-</span>`;
+
+    let bg = '#6b7280';
+    if (remark === 'NO PENDING') {
+        bg = '#6b7280';
+    } else if (remark === 'PARTIAL PENDING') {
+        bg = '#f59e0b';
+    } else if (remark === 'FULL PENDING' || remark === 'PENDING') {
+        bg = '#3b82f6';
+    }
+
+    return `<span class="badge" style="background: ${bg}; color: #fff; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">${remark}</span>`;
+}
 
 function populatePendingPlanDistinctValues() {
     const item_types = new Set();
@@ -17161,6 +17197,7 @@ function populatePendingPlanDistinctValues() {
     const colors = new Set();
     const sizes = new Set();
     const statuses = new Set();
+    const remarks = new Set();
 
     (pendingPlanningState.allRecords || []).forEach(r => {
         if (r.item_type) item_types.add(r.item_type);
@@ -17170,6 +17207,10 @@ function populatePendingPlanDistinctValues() {
         if (r.color) colors.add(r.color);
         if (r.size) sizes.add(r.size);
         if (r.status) statuses.add(r.status);
+
+        const rem = getPendingRowRemark(r);
+        r.remark = rem;
+        remarks.add(rem);
     });
 
     pendingPlanningState.distinctValues.item_type = Array.from(item_types).sort((a, b) => a.localeCompare(b));
@@ -17179,16 +17220,17 @@ function populatePendingPlanDistinctValues() {
     pendingPlanningState.distinctValues.color = Array.from(colors).sort((a, b) => a.localeCompare(b));
     pendingPlanningState.distinctValues.size = Array.from(sizes).sort((a, b) => a.localeCompare(b));
     pendingPlanningState.distinctValues.status = Array.from(statuses).sort((a, b) => a.localeCompare(b));
+    pendingPlanningState.distinctValues.remark = Array.from(remarks).sort((a, b) => a.localeCompare(b));
 }
 
 function filterPendingPlanRecords() {
     return (pendingPlanningState.allRecords || []).filter(r => {
         // Categorical filters
-        const cats = ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'];
+        const cats = ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status', 'remark'];
         for (const col of cats) {
             const activeSet = pendingPlanningState.filters[col];
             if (activeSet && activeSet.size > 0) {
-                const val = r[col] || '';
+                const val = (col === 'remark' ? (r.remark || getPendingRowRemark(r)) : (r[col] || ''));
                 if (!activeSet.has(val)) return false;
             }
         }
@@ -17308,6 +17350,7 @@ function renderFilteredPendingPlanTable() {
         const isCommon = (r.item_type === 'Common');
         const rowId = `pending-row-${r.id}`;
         const isExpanded = pendingPlanningState.expandedRows.has(rowId);
+        const rem = r.remark || getPendingRowRemark(r);
 
         html += `
             <tr id="${rowId}" style="border-bottom: 1px solid var(--border-color); ${isCommon ? 'background: rgba(59, 130, 246, 0.03);' : ''}">
@@ -17325,9 +17368,10 @@ function renderFilteredPendingPlanTable() {
                 <td style="text-align: right;">${Math.round(r.wip_qty || 0).toLocaleString()}</td>
                 <td style="text-align: right;">${Math.round(r.already_planned_qty || 0).toLocaleString()}</td>
                 <td style="text-align: right; font-weight: 700; color: var(--primary-color); font-size: 13px;">${Math.round(r.net_pending_qty || 0).toLocaleString()}</td>
+                <td style="text-align: center;">${renderRemarkBadge(rem)}</td>
                 <td style="text-align: center;">${renderStatusBadge(r.status)}</td>
             </tr>
-            ${isCommon && isExpanded ? `<tr id="${rowId}-members" class="member-subrow"><td colspan="13" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.2);"><div id="${rowId}-members-container" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading members...</div></td></tr>` : ''}
+            ${isCommon && isExpanded ? `<tr id="${rowId}-members" class="member-subrow"><td colspan="14" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.2);"><div id="${rowId}-members-container" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading members...</div></td></tr>` : ''}
         `;
     });
 
@@ -17406,6 +17450,7 @@ function openPendingPlanFilter(colKey, event) {
         wip_qty: 'WIP Qty Filter',
         already_planned_qty: 'Already Planned Filter',
         net_pending_qty: 'Net Pending Qty Filter',
+        remark: 'Remark Filter',
         status: 'Status Filter'
     };
 
@@ -17567,7 +17612,7 @@ function clearPendingPlanFilterCurrent() {
 }
 
 function clearAllPendingPlanHeaderFilters() {
-    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'].forEach(k => {
+    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status', 'remark'].forEach(k => {
         if (pendingPlanningState.filters[k]) pendingPlanningState.filters[k].clear();
         else pendingPlanningState.filters[k] = new Set();
         updatePendingFilterBtnVisualState(k);
@@ -17600,7 +17645,7 @@ function updatePendingFilterBtnVisualState(colKey) {
 
     // Check if any filter is active across all columns
     let anyActive = false;
-    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status'].forEach(k => {
+    ['item_type', 'brand', 'category', 'product_name', 'color', 'size', 'status', 'remark'].forEach(k => {
         if (pendingPlanningState.filters[k] && pendingPlanningState.filters[k].size > 0) anyActive = true;
     });
     ['requirement_qty', 'fg_qty', 'wip_qty', 'already_planned_qty', 'net_pending_qty'].forEach(k => {
@@ -17677,8 +17722,8 @@ async function togglePendingCommonMembers(rowId, commonName, primaryColor, size,
                             <th style="padding: 6px 10px; text-align: right;">FG</th>
                             <th style="padding: 6px 10px; text-align: right;">WIP</th>
                             <th style="padding: 6px 10px; text-align: right; color: var(--primary-color);">Pending</th>
+                            <th style="padding: 6px 10px; text-align: center;">Remark</th>
                             <th style="padding: 6px 10px; text-align: right;">Fab Req (KG)</th>
-                            <th style="padding: 6px 10px; text-align: right;">Alloc (KG)</th>
                             <th style="padding: 6px 10px; text-align: right; color: #10b981;">Cuttable</th>
                             <th style="padding: 6px 10px; text-align: right; color: #f59e0b;">Hold</th>
                             <th style="padding: 6px 10px; text-align: center;">Status</th>
@@ -17688,6 +17733,7 @@ async function togglePendingCommonMembers(rowId, commonName, primaryColor, size,
             `;
 
             data.members.forEach(m => {
+                const mRem = getPendingRowRemark(m);
                 mHtml += `
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 6px 10px; font-weight: 500;">${escapeHtml(m.product_name)}</td>
@@ -17697,8 +17743,8 @@ async function togglePendingCommonMembers(rowId, commonName, primaryColor, size,
                         <td style="padding: 6px 10px; text-align: right;">${Math.round(m.fg_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: right;">${Math.round(m.wip_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: var(--primary-color);">${Math.round(m.net_pending_qty).toLocaleString()}</td>
+                        <td style="padding: 6px 10px; text-align: center;">${renderRemarkBadge(mRem)}</td>
                         <td style="padding: 6px 10px; text-align: right;">${m.fabric_required_kg.toFixed(2)}</td>
-                        <td style="padding: 6px 10px; text-align: right;">${m.allocated_fabric_kg.toFixed(2)}</td>
                         <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: #10b981;">${Math.round(m.cuttable_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: right; color: #f59e0b;">${Math.round(m.hold_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: center;">${renderStatusBadge(m.status)}</td>
@@ -18548,7 +18594,6 @@ const fabRequiredState = {
         consuming_products_count: null,
         available_stock_kg: null,
         required_fabric_kg: null,
-        allocated_fabric_kg: null,
         remaining_fabric_kg: null,
         shortage_kg: null,
         coverage_pct: null,
@@ -18575,7 +18620,7 @@ document.addEventListener('click', function (e) {
 
 const isFabRequiredNumericCol = (colKey) => [
     'dia', 'gsm', 'consuming_products_count', 'available_stock_kg',
-    'required_fabric_kg', 'allocated_fabric_kg', 'remaining_fabric_kg',
+    'required_fabric_kg', 'remaining_fabric_kg',
     'shortage_kg', 'coverage_pct'
 ].includes(colKey);
 
@@ -18617,7 +18662,7 @@ function filterFabRequiredRecords() {
         // Numeric filters
         const nums = [
             'dia', 'gsm', 'consuming_products_count', 'available_stock_kg',
-            'required_fabric_kg', 'allocated_fabric_kg', 'remaining_fabric_kg',
+            'required_fabric_kg', 'remaining_fabric_kg',
             'shortage_kg', 'coverage_pct'
         ];
         for (const col of nums) {
@@ -18666,7 +18711,7 @@ async function loadFabRequiredTable(page = 1) {
 
         const tbody = document.getElementById('fab-required-table-body');
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading fabric pool dataset...</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading fabric pool dataset...</td></tr>`;
         }
 
         try {
@@ -18703,11 +18748,10 @@ function renderFilteredFabRequiredTable() {
     const totalCount = filteredRecords.length;
 
     // Dynamic totals calculation across filtered rows
-    let totAvail = 0, totReq = 0, totAlloc = 0, totShortage = 0;
+    let totAvail = 0, totReq = 0, totShortage = 0;
     filteredRecords.forEach(r => {
         totAvail += Number(r.available_stock_kg) || 0;
         totReq += Number(r.required_fabric_kg) || 0;
-        totAlloc += Number(r.allocated_fabric_kg) || 0;
         totShortage += Number(r.shortage_kg) || 0;
     });
 
@@ -18715,13 +18759,11 @@ function renderFilteredFabRequiredTable() {
     if (footAvail) footAvail.textContent = totAvail.toFixed(2);
     const footReq = document.getElementById('foot-fabric-req');
     if (footReq) footReq.textContent = totReq.toFixed(2);
-    const footAlloc = document.getElementById('foot-fabric-alloc');
-    if (footAlloc) footAlloc.textContent = totAlloc.toFixed(2);
     const footShortage = document.getElementById('foot-fabric-shortage');
     if (footShortage) footShortage.textContent = totShortage.toFixed(2);
 
     if (totalCount === 0) {
-        tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No fabric pools match the active filter criteria.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No fabric pools match the active filter criteria.</td></tr>`;
         renderFabRequiredPaginationUI(0, fabRequiredState.page, fabRequiredState.per_page);
         return;
     }
@@ -18738,7 +18780,6 @@ function renderFilteredFabRequiredTable() {
         const gsmDisplay = (r.gsm !== undefined && r.gsm !== null) ? r.gsm : '-';
         const availDisplay = (r.available_stock_kg !== undefined && r.available_stock_kg !== null) ? Number(r.available_stock_kg).toFixed(2) : '0.00';
         const reqDisplay = (r.required_fabric_kg !== undefined && r.required_fabric_kg !== null) ? Number(r.required_fabric_kg).toFixed(2) : '0.00';
-        const allocDisplay = (r.allocated_fabric_kg !== undefined && r.allocated_fabric_kg !== null) ? Number(r.allocated_fabric_kg).toFixed(2) : '0.00';
         const remDisplay = (r.remaining_fabric_kg !== undefined && r.remaining_fabric_kg !== null) ? Number(r.remaining_fabric_kg).toFixed(2) : '0.00';
         const shortageDisplay = (r.shortage_kg !== undefined && r.shortage_kg !== null) ? Number(r.shortage_kg).toFixed(2) : '0.00';
         const coveragePct = Number(r.coverage_pct) || 0;
@@ -18757,7 +18798,6 @@ function renderFilteredFabRequiredTable() {
                 <td style="text-align: center;"><span class="badge" style="background: #3b82f6; color: #fff; font-size: 11px; padding: 2px 7px;">${r.consuming_products_count || 0} styles</span></td>
                 <td style="text-align: right; font-weight: 700; color: #10b981;">${availDisplay}</td>
                 <td style="text-align: right; font-weight: 600;">${reqDisplay}</td>
-                <td style="text-align: right; font-weight: 600;">${allocDisplay}</td>
                 <td style="text-align: right; color: var(--text-secondary);">${remDisplay}</td>
                 <td style="text-align: right; font-weight: 700; color: #ef4444;">${shortageDisplay}</td>
                 <td style="text-align: center;">
@@ -18775,7 +18815,7 @@ function renderFilteredFabRequiredTable() {
                     </button>
                 </td>
             </tr>
-            ${isExpanded ? `<tr id="pool-subrow-${poolKey}"><td colspan="14" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.18);"><div id="pool-subrow-container-${poolKey}" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading consuming styles...</div></td></tr>` : ''}
+            ${isExpanded ? `<tr id="pool-subrow-${poolKey}"><td colspan="13" style="padding: 0 0 0 40px; background: rgba(0,0,0,0.18);"><div id="pool-subrow-container-${poolKey}" style="padding: 10px 0;"><i class="fa-solid fa-spinner fa-spin"></i> Loading consuming styles...</div></td></tr>` : ''}
         `;
     });
 
@@ -18786,7 +18826,7 @@ function renderFilteredFabRequiredTable() {
 function renderFabRequiredEmpty(msg) {
     const tbody = document.getElementById('fab-required-table-body');
     if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="14" style="text-align: center; padding: 40px; color: var(--text-muted);">${msg}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);">${msg}</td></tr>`;
     }
     renderFabRequiredPaginationUI(0, 1, fabRequiredState.per_page);
 }
@@ -18848,7 +18888,6 @@ function openFabRequiredFilter(colKey, event) {
         consuming_products_count: 'Consuming Styles Filter',
         available_stock_kg: 'Avail Stock (KG) Filter',
         required_fabric_kg: 'Total Req (KG) Filter',
-        allocated_fabric_kg: 'Allocated (KG) Filter',
         remaining_fabric_kg: 'Remaining (KG) Filter',
         shortage_kg: 'Shortage (KG) Filter',
         coverage_pct: 'Coverage % Filter',
@@ -19018,7 +19057,6 @@ function clearAllFabRequiredFilters() {
         consuming_products_count: null,
         available_stock_kg: null,
         required_fabric_kg: null,
-        allocated_fabric_kg: null,
         remaining_fabric_kg: null,
         shortage_kg: null,
         coverage_pct: null,
@@ -19027,7 +19065,7 @@ function clearAllFabRequiredFilters() {
 
     const cols = [
         'fabric_name', 'fabric_color', 'dia', 'gsm', 'consuming_products_count',
-        'available_stock_kg', 'required_fabric_kg', 'allocated_fabric_kg',
+        'available_stock_kg', 'required_fabric_kg',
         'remaining_fabric_kg', 'shortage_kg', 'coverage_pct', 'status'
     ];
     cols.forEach(c => updateFabRequiredFilterBtnVisualState(c));
@@ -19093,7 +19131,7 @@ async function toggleFabricPoolConsumers(poolKey, fabricName, fabricColor, dia, 
         const subTr = document.createElement('tr');
         subTr.id = `pool-subrow-${poolKey}`;
         subTr.innerHTML = `
-            <td colspan="14" style="padding: 8px 16px 12px 48px; background: rgba(0,0,0,0.18); border-bottom: 1px solid var(--border-color);">
+            <td colspan="13" style="padding: 8px 16px 12px 48px; background: rgba(0,0,0,0.18); border-bottom: 1px solid var(--border-color);">
                 <div id="pool-subrow-container-${poolKey}" style="padding: 4px 0;">
                     <i class="fa-solid fa-spinner fa-spin"></i> Loading consuming styles...
                 </div>
@@ -19108,6 +19146,9 @@ async function toggleFabricPoolConsumers(poolKey, fabricName, fabricColor, dia, 
                 fabric_color: fabricColor,
                 dia: dia
             });
+            if (gsm !== undefined && gsm !== null && gsm !== '' && gsm !== '-') {
+                params.append('gsm', gsm);
+            }
             const res = await fetch(`/api/pending-qty-plan/pool-consumers?${params.toString()}`);
             const data = await res.json();
             const container = document.getElementById(`pool-subrow-container-${poolKey}`);
@@ -19132,7 +19173,6 @@ async function toggleFabricPoolConsumers(poolKey, fabricName, fabricColor, dia, 
                             <th style="padding: 6px 10px; text-align: left;">Size</th>
                             <th style="padding: 6px 10px; text-align: right;">Net Pending</th>
                             <th style="padding: 6px 10px; text-align: right;">Req Fabric (KG)</th>
-                            <th style="padding: 6px 10px; text-align: right;">Allocated (KG)</th>
                             <th style="padding: 6px 10px; text-align: right; color: #10b981;">Cuttable (Pcs)</th>
                             <th style="padding: 6px 10px; text-align: right; color: #f59e0b;">Hold (Pcs)</th>
                             <th style="padding: 6px 10px; text-align: center;">Alloc Type</th>
@@ -19152,7 +19192,6 @@ async function toggleFabricPoolConsumers(poolKey, fabricName, fabricColor, dia, 
                         <td style="padding: 6px 10px;">${escapeHtml(c.size)}</td>
                         <td style="padding: 6px 10px; text-align: right; font-weight: 600;">${Math.round(c.net_pending_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: right;">${c.required_fabric_kg.toFixed(2)}</td>
-                        <td style="padding: 6px 10px; text-align: right; font-weight: 600;">${c.allocated_fabric_kg.toFixed(2)}</td>
                         <td style="padding: 6px 10px; text-align: right; font-weight: 600; color: #10b981;">${Math.round(c.cuttable_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: right; color: #f59e0b;">${Math.round(c.hold_qty).toLocaleString()}</td>
                         <td style="padding: 6px 10px; text-align: center;"><span class="badge" style="background: ${c.allocation_type === 'MANUAL' ? '#3b82f6' : 'rgba(255,255,255,0.08)'}; color: #fff; font-size: 9.5px; padding: 1px 5px;">${c.allocation_type}</span></td>
@@ -19249,6 +19288,9 @@ async function openPendingManualAllocModal(fabricName, fabricColor, dia, gsm, av
             fabric_color: fabricColor,
             dia: dia
         });
+        if (gsm !== undefined && gsm !== null && gsm !== '' && gsm !== '-') {
+            params.append('gsm', gsm);
+        }
         const res = await fetch(`/api/pending-qty-plan/pool-consumers?${params.toString()}`);
         const data = await res.json();
 
@@ -19426,9 +19468,9 @@ function renderStatusBadge(status) {
     if (!status) return `<span class="badge" style="background: #6b7280; color: #fff; font-size: 10px; padding: 2px 6px;">-</span>`;
 
     let bg = '#6b7280';
-    if (status === 'FULL' || status === 'ENOUGH') {
-        bg = '#10b981';
-    } else if (status === 'PARTIAL') {
+    if (status === 'FULL' || status === 'ENOUGH' || status === 'FULL PENDING' || status === 'PENDING') {
+        bg = '#3b82f6';
+    } else if (status === 'PARTIAL' || status === 'PARTIAL PENDING') {
         bg = '#f59e0b';
     } else if (status === 'FABRIC SHORTAGE' || status === 'SHORTAGE') {
         bg = '#ef4444';
@@ -20034,6 +20076,487 @@ function exportLeadDaysExcel() {
             showToast('Info', 'Export ready for ' + rows.length + ' production items', 'info');
         }
     }
+}
+
+// =============================================================
+// TAB 4: EXCEL PLANNING ENGINE (ISOLATED PRESENTATION MODULE)
+// Pure In-Memory Derived Pivot Matrix (0 API / 0 DB Operations)
+// =============================================================
+
+const excelPlanningState = {
+    metric: 'net_pending_qty',       // 'net_pending_qty' | 'cuttable_qty' | 'requirement_qty' | 'hold_qty' | 'fg_qty' | 'wip_qty'
+    selectedGroup: 'ALL',
+    selectedSCodes: new Set(),
+    sCodeSearchTerm: '',
+    collapsedGroups: new Set(),
+    hasActualSCode: false,
+    lastBuiltMatrix: null
+};
+
+const GARMENT_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', 'XXXL', '4XL', 'XXXXL', '5XL', 'XXXXXL', 'FREE', 'FS'];
+
+function sortGarmentSizes(sizes) {
+    return Array.from(sizes).sort((a, b) => {
+        const ua = String(a).toUpperCase().trim();
+        const ub = String(b).toUpperCase().trim();
+        const ia = GARMENT_SIZE_ORDER.indexOf(ua);
+        const ib = GARMENT_SIZE_ORDER.indexOf(ub);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return ua.localeCompare(ub, undefined, { numeric: true, sensitivity: 'base' });
+    });
+}
+
+function getExcelMetricTitle(m) {
+    switch (m) {
+        case 'net_pending_qty': return 'Net Pending Qty';
+        case 'cuttable_qty': return 'Cuttable Qty';
+        case 'requirement_qty': return 'Pending Order Qty';
+        case 'hold_qty': return 'Non Cuttable Qty';
+        case 'fg_qty': return 'FG Stock';
+        case 'wip_qty': return 'WIP Qty';
+        default: return m;
+    }
+}
+
+function getRecordMetricVal(r, metric) {
+    if (metric === 'net_pending_qty') return Number(r.net_pending_qty) || 0;
+    if (metric === 'cuttable_qty') return Number(r.cuttable_qty) || 0;
+    if (metric === 'requirement_qty') return Number(r.requirement_qty) || 0;
+    if (metric === 'hold_qty') return Number(r.hold_qty) || 0;
+    if (metric === 'fg_qty') return Number(r.fg_qty) || 0;
+    if (metric === 'wip_qty') return Number(r.wip_qty) || 0;
+    return Number(r[metric]) || 0;
+}
+
+function renderExcelPlanningTab() {
+    const container = document.getElementById('excel-matrix-table-container');
+    if (!container) return;
+
+    // Strict Empty Dataset Rule: Zero API calls, show clean empty state
+    const allRecords = pendingPlanningState.allRecords;
+    if (!allRecords || allRecords.length === 0) {
+        container.innerHTML = `
+            <div id="excel-matrix-empty" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <i class="fa-solid fa-circle-info" style="margin-right: 6px;"></i> No planning data available
+            </div>
+        `;
+        document.getElementById('excel-kpi-cuttable') && (document.getElementById('excel-kpi-cuttable').textContent = '0');
+        document.getElementById('excel-kpi-net-pending') && (document.getElementById('excel-kpi-net-pending').textContent = '0');
+        document.getElementById('excel-kpi-order') && (document.getElementById('excel-kpi-order').textContent = '0');
+        document.getElementById('excel-kpi-non-cuttable') && (document.getElementById('excel-kpi-non-cuttable').textContent = '0');
+        return;
+    }
+
+    // 1. Calculate 4 Fixed Independent KPI Cards using exact calculated plan values (Immutable summary)
+    let kpiCuttable = 0, kpiNet = 0, kpiOrder = 0, kpiNonCut = 0;
+    allRecords.forEach(r => {
+        kpiNet += Number(r.net_pending_qty) || 0;
+        kpiOrder += Number(r.requirement_qty) || 0;
+        kpiCuttable += Number(r.cuttable_qty) || 0;
+        kpiNonCut += Number(r.hold_qty) || 0;
+    });
+
+    const elCut = document.getElementById('excel-kpi-cuttable');
+    if (elCut) elCut.textContent = Math.round(kpiCuttable).toLocaleString();
+    const elNet = document.getElementById('excel-kpi-net-pending');
+    if (elNet) elNet.textContent = Math.round(kpiNet).toLocaleString();
+    const elOrd = document.getElementById('excel-kpi-order');
+    if (elOrd) elOrd.textContent = Math.round(kpiOrder).toLocaleString();
+    const elNon = document.getElementById('excel-kpi-non-cuttable');
+    if (elNon) elNon.textContent = Math.round(kpiNonCut).toLocaleString();
+
+    // 2. Extract distinct Groups and S.CODE options (Derived from Product Name + Common Production Name)
+    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    const distinctGroups = new Set();
+
+    allRecords.forEach(r => {
+        const grp = r.common_production_name || r.category || 'General';
+        if (grp) distinctGroups.add(grp);
+    });
+
+    // Populate Group dropdown
+    const groupSelect = document.getElementById('excel-group-select');
+    if (groupSelect) {
+        const curGrp = excelPlanningState.selectedGroup;
+        let grpHtml = `<option value="ALL">All Groups</option>`;
+        Array.from(distinctGroups).sort((a, b) => a.localeCompare(b)).forEach(g => {
+            grpHtml += `<option value="${escapeHtml(g)}" ${g === curGrp ? 'selected' : ''}>${escapeHtml(g)}</option>`;
+        });
+        groupSelect.innerHTML = grpHtml;
+    }
+
+    // Populate S.CODE checklist
+    renderExcelSCodeDropdownUI(distinctSCodes);
+
+    // 3. Local In-Memory Filtering (Pure Read-Only Projection)
+    const filteredRecords = allRecords.filter(r => {
+        if (excelPlanningState.selectedGroup !== 'ALL') {
+            const grp = r.common_production_name || r.category || 'General';
+            if (grp !== excelPlanningState.selectedGroup) return false;
+        }
+        if (excelPlanningState.selectedSCodes.size > 0) {
+            const pName = r.product_name ? String(r.product_name).trim() : '';
+            const cName = r.common_production_name ? String(r.common_production_name).trim() : '';
+            const matches = (pName && excelPlanningState.selectedSCodes.has(pName)) ||
+                            (cName && excelPlanningState.selectedSCodes.has(cName));
+            if (!matches) return false;
+        }
+        return true;
+    });
+
+    if (filteredRecords.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No planning records match the active Tab 4 filters.
+            </div>
+        `;
+        excelPlanningState.lastBuiltMatrix = null;
+        return;
+    }
+
+    // 4. Build Excel Matrix Pivot Model
+    const sizeSet = new Set();
+    filteredRecords.forEach(r => {
+        if (r.size) sizeSet.add(String(r.size).trim());
+    });
+    const sizeCols = sortGarmentSizes(sizeSet);
+
+    // Grouping by Group Header -> Product/Color Row
+    const groupsMap = new Map(); // groupKey -> Map(rowKey -> { label, sizes: {}, total: 0 })
+
+    filteredRecords.forEach(r => {
+        const grpKey = r.common_production_name ? ('#' + r.common_production_name.replace(/^#/, '')) : (r.category ? ('#' + r.category) : '#GENERAL');
+        if (!groupsMap.has(grpKey)) {
+            groupsMap.set(grpKey, new Map());
+        }
+        const rowMap = groupsMap.get(grpKey);
+        const rowLabel = r.color ? String(r.color).trim() : (r.product_name || 'Item');
+
+        if (!rowMap.has(rowLabel)) {
+            rowMap.set(rowLabel, { label: rowLabel, sizes: {}, total: 0 });
+        }
+        const rowObj = rowMap.get(rowLabel);
+        const sz = String(r.size || '').trim();
+        const val = getRecordMetricVal(r, excelPlanningState.metric);
+        rowObj.sizes[sz] = (rowObj.sizes[sz] || 0) + val;
+        rowObj.total += val;
+    });
+
+    // Calculate Subtotals & Grand Totals
+    const grandSizeTotals = {};
+    sizeCols.forEach(s => { grandSizeTotals[s] = 0; });
+    let overallGrandTotal = 0;
+
+    const matrixModel = {
+        metric: excelPlanningState.metric,
+        sizeCols: sizeCols,
+        groups: []
+    };
+
+    for (const [grpKey, rowMap] of groupsMap.entries()) {
+        const grpSubtotals = {};
+        sizeCols.forEach(s => { grpSubtotals[s] = 0; });
+        let grpTotal = 0;
+
+        const rows = Array.from(rowMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+        rows.forEach(row => {
+            sizeCols.forEach(s => {
+                const sv = row.sizes[s] || 0;
+                grpSubtotals[s] += sv;
+                grandSizeTotals[s] += sv;
+            });
+            grpTotal += row.total;
+            overallGrandTotal += row.total;
+        });
+
+        matrixModel.groups.push({
+            groupKey: grpKey,
+            rows: rows,
+            subtotals: grpSubtotals,
+            total: grpTotal
+        });
+    }
+
+    excelPlanningState.lastBuiltMatrix = {
+        matrixModel,
+        grandSizeTotals,
+        overallGrandTotal
+    };
+
+    // 5. Render Excel Spreadsheet Matrix HTML
+    let tableHtml = `
+        <table class="excel-matrix-table">
+            <thead>
+                <tr class="excel-header-row">
+                    <th class="excel-col-frozen">Product / Color</th>
+                    ${sizeCols.map(s => `<th>${escapeHtml(s)}</th>`).join('')}
+                    <th style="min-width: 90px; text-align: right; background: #0b5928;">TOTAL</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    matrixModel.groups.forEach(grp => {
+        const isCollapsed = excelPlanningState.collapsedGroups.has(grp.groupKey);
+        tableHtml += `
+            <tr class="excel-group-header-row">
+                <td colspan="${sizeCols.length + 2}" onclick="toggleExcelGroup('${escapeHtml(grp.groupKey)}')" style="cursor: pointer;">
+                    <i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}" style="margin-right: 8px; width: 12px;"></i>
+                    <span>${escapeHtml(grp.groupKey)}</span>
+                    <span style="font-size: 11px; opacity: 0.75; font-weight: 500; margin-left: 8px;">(${grp.rows.length} colors / items)</span>
+                </td>
+            </tr>
+        `;
+
+        if (!isCollapsed) {
+            grp.rows.forEach(row => {
+                tableHtml += `
+                    <tr class="excel-row">
+                        <td class="excel-col-frozen">${escapeHtml(row.label)}</td>
+                        ${sizeCols.map(s => {
+                            const v = row.sizes[s] || 0;
+                            return v > 0 
+                                ? `<td class="excel-cell-nonzero">${Math.round(v).toLocaleString()}</td>`
+                                : `<td class="excel-cell-zero">0</td>`;
+                        }).join('')}
+                        ${row.total > 0 
+                            ? `<td class="excel-cell-total-nonzero">${Math.round(row.total).toLocaleString()}</td>` 
+                            : `<td class="excel-cell-total-zero">0</td>`}
+                    </tr>
+                `;
+            });
+
+            tableHtml += `
+                <tr class="excel-subtotal-row">
+                    <td class="excel-col-frozen">Sub Total (${escapeHtml(grp.groupKey)})</td>
+                    ${sizeCols.map(s => {
+                        const sv = grp.subtotals[s] || 0;
+                        return sv > 0 
+                            ? `<td class="excel-cell-nonzero">${Math.round(sv).toLocaleString()}</td>` 
+                            : `<td class="excel-cell-zero">0</td>`;
+                    }).join('')}
+                    ${grp.total > 0 
+                        ? `<td class="excel-cell-total-nonzero">${Math.round(grp.total).toLocaleString()}</td>` 
+                        : `<td class="excel-cell-total-zero">0</td>`}
+                </tr>
+            `;
+        }
+    });
+
+    tableHtml += `
+            </tbody>
+            <tfoot>
+                <tr class="excel-grand-total-row">
+                    <td class="excel-col-frozen">GRAND TOTAL</td>
+                    ${sizeCols.map(s => {
+                        const gv = grandSizeTotals[s] || 0;
+                        return gv > 0 
+                            ? `<td class="excel-cell-nonzero">${Math.round(gv).toLocaleString()}</td>` 
+                            : `<td class="excel-cell-zero">0</td>`;
+                    }).join('')}
+                    ${overallGrandTotal > 0 
+                        ? `<td class="excel-cell-total-nonzero" style="font-size: 13.5px;">${Math.round(overallGrandTotal).toLocaleString()}</td>` 
+                        : `<td class="excel-cell-total-zero">0</td>`}
+                </tr>
+            </tfoot>
+        </table>
+    `;
+
+    container.innerHTML = tableHtml;
+}
+
+function getDistinctSCodeOptions(allRecords) {
+    const distinctNames = new Set();
+    (allRecords || []).forEach(r => {
+        if (r.product_name && String(r.product_name).trim()) {
+            distinctNames.add(String(r.product_name).trim());
+        }
+        if (r.common_production_name && String(r.common_production_name).trim()) {
+            distinctNames.add(String(r.common_production_name).trim());
+        }
+    });
+    return Array.from(distinctNames).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function renderExcelSCodeDropdownUI(scodes) {
+    const listContainer = document.getElementById('excel-scode-checklist');
+    const labelSpan = document.getElementById('excel-scode-btn-label');
+    if (!listContainer) return;
+
+    if (!scodes || scodes.length === 0) {
+        listContainer.innerHTML = `<div style="font-size: 11px; color: var(--text-muted); padding: 6px;">No styles available</div>`;
+        if (labelSpan) labelSpan.textContent = 'All';
+        return;
+    }
+
+    const selCount = excelPlanningState.selectedSCodes.size;
+    if (labelSpan) {
+        labelSpan.textContent = selCount === 0 ? 'All' : `${selCount} Selected`;
+    }
+
+    const term = (excelPlanningState.sCodeSearchTerm || '').toLowerCase().trim();
+    let html = '';
+    scodes.forEach(sc => {
+        if (term && !sc.toLowerCase().includes(term)) return;
+        const isChecked = excelPlanningState.selectedSCodes.has(sc);
+        html += `
+            <label class="excel-scode-checkbox-item">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="onExcelSCodeToggle('${escapeHtml(sc)}')">
+                <span title="${escapeHtml(sc)}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(sc)}</span>
+            </label>
+        `;
+    });
+
+    listContainer.innerHTML = html || `<div style="font-size: 11px; color: var(--text-muted); padding: 4px;">No matching style</div>`;
+}
+
+function onExcelMetricChange(newMetric) {
+    excelPlanningState.metric = newMetric;
+    renderExcelPlanningTab(); // In-memory re-render only (0 API calls, KPI cards remain fixed)
+}
+
+function onExcelGroupChange(newGroup) {
+    excelPlanningState.selectedGroup = newGroup;
+    renderExcelPlanningTab(); // In-memory filter (0 API calls)
+}
+
+function toggleExcelSCodeDropdown(e) {
+    if (e) e.stopPropagation();
+    const popup = document.getElementById('excel-scode-dropdown-popup');
+    if (popup) {
+        popup.classList.toggle('hidden');
+    }
+}
+
+function onExcelSCodeSearch(val) {
+    excelPlanningState.sCodeSearchTerm = val || '';
+    const allRecords = pendingPlanningState.allRecords || [];
+    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    renderExcelSCodeDropdownUI(distinctSCodes);
+}
+
+function onExcelSCodeToggle(sc) {
+    if (excelPlanningState.selectedSCodes.has(sc)) {
+        excelPlanningState.selectedSCodes.delete(sc);
+    } else {
+        excelPlanningState.selectedSCodes.add(sc);
+    }
+    renderExcelPlanningTab();
+}
+
+function selectExcelAllSCodes() {
+    const allRecords = pendingPlanningState.allRecords || [];
+    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    distinctSCodes.forEach(sc => {
+        excelPlanningState.selectedSCodes.add(sc);
+    });
+    renderExcelPlanningTab();
+}
+
+function clearExcelSCodes() {
+    excelPlanningState.selectedSCodes.clear();
+    renderExcelPlanningTab();
+}
+
+function toggleExcelGroup(grpKey) {
+    if (excelPlanningState.collapsedGroups.has(grpKey)) {
+        excelPlanningState.collapsedGroups.delete(grpKey);
+    } else {
+        excelPlanningState.collapsedGroups.add(grpKey);
+    }
+    renderExcelPlanningTab();
+}
+
+function expandAllExcelGroups() {
+    excelPlanningState.collapsedGroups.clear();
+    renderExcelPlanningTab();
+}
+
+function collapseAllExcelGroups() {
+    if (excelPlanningState.lastBuiltMatrix && excelPlanningState.lastBuiltMatrix.matrixModel) {
+        excelPlanningState.lastBuiltMatrix.matrixModel.groups.forEach(g => {
+            excelPlanningState.collapsedGroups.add(g.groupKey);
+        });
+    }
+    renderExcelPlanningTab();
+}
+
+// Close S.CODE popup when clicking outside
+document.addEventListener('click', (e) => {
+    const popup = document.getElementById('excel-scode-dropdown-popup');
+    const btn = document.getElementById('excel-scode-dropdown-btn');
+    if (popup && !popup.classList.contains('hidden')) {
+        if (!popup.contains(e.target) && (!btn || !btn.contains(e.target))) {
+            popup.classList.add('hidden');
+        }
+    }
+});
+
+// Dedicated Client-Side XLSX Export (No CSV, 0 API calls, 0 DB queries)
+function exportExcelPlanningMatrix() {
+    if (!excelPlanningState.lastBuiltMatrix || !excelPlanningState.lastBuiltMatrix.matrixModel) {
+        if (typeof showToast === 'function') {
+            showToast('Warning', 'No planning matrix data available to export', 'warning');
+        }
+        return;
+    }
+
+    if (typeof XLSX === 'undefined') {
+        alert("XLSX library is not loaded. Cannot export Excel file.");
+        return;
+    }
+
+    const { matrixModel, grandSizeTotals, overallGrandTotal } = excelPlanningState.lastBuiltMatrix;
+    const metricTitle = getExcelMetricTitle(matrixModel.metric);
+    const sizeCols = matrixModel.sizeCols;
+
+    const aoa = [];
+
+    // Title Row
+    aoa.push([`EXCEL PLANNING MATRIX — ${metricTitle.toUpperCase()}`]);
+    aoa.push([]);
+
+    // Header Row
+    aoa.push(['Product / Color', ...sizeCols, 'TOTAL']);
+
+    // Data Groups
+    matrixModel.groups.forEach(grp => {
+        aoa.push([grp.groupKey]);
+        grp.rows.forEach(row => {
+            const rowArr = [row.label];
+            sizeCols.forEach(s => {
+                rowArr.push(row.sizes[s] || 0);
+            });
+            rowArr.push(row.total);
+            aoa.push(rowArr);
+        });
+
+        // Group Subtotal Row
+        const subArr = [`Sub Total (${grp.groupKey})`];
+        sizeCols.forEach(s => {
+            subArr.push(grp.subtotals[s] || 0);
+        });
+        subArr.push(grp.total);
+        aoa.push(subArr);
+        aoa.push([]); // blank separator
+    });
+
+    // Grand Total Row
+    const grandArr = ['GRAND TOTAL'];
+    sizeCols.forEach(s => {
+        grandArr.push(grandSizeTotals[s] || 0);
+    });
+    grandArr.push(overallGrandTotal);
+    aoa.push(grandArr);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Excel Planning");
+
+    const filename = `Excel_Planning_${matrixModel.metric}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, filename);
 }
 
 

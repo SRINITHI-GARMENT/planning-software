@@ -691,14 +691,11 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
             color, size, requirement_qty, fg_qty, wip_qty, already_planned_qty, net_pending_qty,
             fabric_name, fabric_color, dia, gsm, fabric_consumption, fabric_required_kg,
             allocated_fabric_kg, cuttable_qty, hold_qty, shortage_kg, priority, manual_priority, status
-        ) VALUES %s RETURNING id, product_name, color, size, item_type;
+        ) VALUES %s RETURNING id;
     """
-    execute_values(cur, insert_line_sql, line_inserts)
-    saved_lines = cur.fetchall()
-
-    line_id_map = {}
-    for lid, pname, col, sz, itype in saved_lines:
-        line_id_map[(pname.lower().strip(), col.lower().strip(), sz.lower().strip(), itype)] = lid
+    saved_lines = execute_values(cur, insert_line_sql, line_inserts, fetch=True)
+    for idx, row in enumerate(saved_lines):
+        all_planning_items[idx]['line_id'] = row[0]
 
     # Insert member lines
     member_values = []
@@ -721,7 +718,7 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
     for pool_key, pool_data in pools.items():
         avail_stock = pool_data['available_stock_kg']
         for item in pool_data['consumers']:
-            lid = line_id_map.get((item['product_name'].lower().strip(), item['color'].lower().strip(), item['size'].lower().strip(), item['item_type']))
+            lid = item.get('line_id')
             alloc_inserts.append((
                 plan_id, lid, item['fabric_name'], item['fabric_color'], item['dia'], item['gsm'],
                 avail_stock, item['fabric_required_kg'], item['allocated_fabric_kg'],
@@ -1021,7 +1018,8 @@ def get_pending_plan_data(cur, plan_id, filters, page=1, per_page=50, all_record
         SELECT 
             id, item_type, brand, category, product_name, common_production_name,
             color, size, requirement_qty, fg_qty, wip_qty, already_planned_qty,
-            net_pending_qty, status, fabric_name, fabric_color, dia, gsm, fabric_consumption
+            net_pending_qty, status, fabric_name, fabric_color, dia, gsm, fabric_consumption,
+            cuttable_qty, hold_qty
         FROM pending_qty_plan_lines
         WHERE plan_id = %s AND {where_str}
         ORDER BY product_name ASC, color ASC, size ASC
@@ -1050,7 +1048,9 @@ def get_pending_plan_data(cur, plan_id, filters, page=1, per_page=50, all_record
             'dia': float(r[16] or 0),
             'gsm': r[17],
             'fabric_consumption': float(r[18] or 0),
-            'has_members': (r[1] == 'Common')
+            'has_members': (r[1] == 'Common'),
+            'cuttable_qty': float(r[19] or 0),
+            'hold_qty': float(r[20] or 0)
         })
 
     return {
@@ -1263,7 +1263,13 @@ def get_fabric_pool_consumers(cur, plan_id, fabric_name, fabric_color, dia, gsm=
     """
     Fetches consumer line details for an expanded Fabric Pool row.
     """
-    cur.execute("""
+    params = [plan_id, fabric_name, fabric_color, float(dia or 0.0)]
+    gsm_clause = ""
+    if gsm is not None and gsm != '' and str(gsm) != '0' and str(gsm) != 'None':
+        gsm_clause = "AND a.gsm = %s"
+        params.append(int(gsm))
+
+    cur.execute(f"""
         SELECT 
             l.id, l.priority, l.manual_priority, l.item_type, l.product_name,
             l.common_production_name, l.color, l.size, l.net_pending_qty,
@@ -1275,8 +1281,9 @@ def get_fabric_pool_consumers(cur, plan_id, fabric_name, fabric_color, dia, gsm=
           AND LOWER(TRIM(a.fabric_name)) = LOWER(TRIM(%s))
           AND LOWER(TRIM(a.fabric_color)) = LOWER(TRIM(%s))
           AND a.dia = %s
+          {gsm_clause}
         ORDER BY l.priority ASC, l.net_pending_qty DESC;
-    """, (plan_id, fabric_name, fabric_color, float(dia or 0.0)))
+    """, params)
 
     consumers = []
     for r in cur.fetchall():
@@ -1360,18 +1367,15 @@ def get_common_production_members(cur, plan_id, common_name, primary_color, size
 
 def update_plan_line_priority(cur, plan_id, line_id, priority, username="System"):
     """
-    Updates priority for a planning line, sets plan status to 'Reviewed', and recalculates allocations.
+    Sets a manual priority on a plan line and triggers a full recalculation
+    respecting all manual overrides.
     """
     cur.execute("""
         UPDATE pending_qty_plan_lines
-        SET priority = %s, manual_priority = %s
-        WHERE id = %s AND plan_id = %s
-        RETURNING product_name, color, size;
+        SET manual_priority = %s,
+            priority = %s
+        WHERE id = %s AND plan_id = %s;
     """, (priority, priority, line_id, plan_id))
-    
-    updated = cur.fetchone()
-    if not updated:
-        return {'success': False, 'message': 'Plan line not found.'}
 
     # Fetch plan details to recalculate
     cur.execute("SELECT plan_name, financial_year, version, from_date, to_date FROM pending_qty_plans WHERE id = %s;", (plan_id,))
@@ -1488,11 +1492,7 @@ def confirm_pending_plan(cur, plan_id, username="Planner"):
         WHERE id = %s
         RETURNING id;
     """, (username, username, plan_id))
-    
-    if not cur.fetchone():
-        return {'success': False, 'message': 'Plan not found.'}
-
-    return {'success': True, 'message': 'Pending Qty Plan confirmed successfully.'}
+    return {'success': True, 'message': 'Plan confirmed successfully.'}
 
 
 def export_pending_plan_csv(cur, export_type, plan_id, filters):
@@ -1521,14 +1521,14 @@ def export_pending_plan_csv(cur, export_type, plan_id, filters):
         writer.writerow([
             'Priority', 'Product Type', 'Product / Common Production Name', 'Color', 'Size',
             'Net Pending Qty', 'Fabric Required (KG)', 'Available Stock (KG)',
-            'Allocated Fabric (KG)', 'Cuttable Qty (Pcs)', 'Hold Qty (Pcs)',
+            'Cuttable Qty (Pcs)', 'Hold Qty (Pcs)',
             'Fabric Shortage (KG)', 'Cut Status'
         ])
         for r in res['rows']:
             writer.writerow([
                 r['priority'], r['item_type'], r['product_name'], r['color'], r['size'],
                 r['net_pending_qty'], r['fabric_required_kg'], r['available_stock_kg'],
-                r['allocated_fabric_kg'], r['cuttable_qty'], r['hold_qty'],
+                r['cuttable_qty'], r['hold_qty'],
                 r['shortage_kg'], r['status']
             ])
 
@@ -1536,14 +1536,14 @@ def export_pending_plan_csv(cur, export_type, plan_id, filters):
         res = get_fab_required_data(cur, plan_id, filters, all_records=True)
         writer.writerow([
             'Fabric Name', 'Fabric Color', 'Dia', 'GSM', 'Consuming Products Count',
-            'Available Stock (KG)', 'Required Fabric (KG)', 'Allocated Fabric (KG)',
+            'Available Stock (KG)', 'Required Fabric (KG)',
             'Remaining Fabric (KG)', 'Shortage (KG)', 'Coverage %', 'Status'
         ])
         for r in res['rows']:
             writer.writerow([
                 r['fabric_name'], r['fabric_color'], r['dia'], r['gsm'],
                 r['consuming_products_count'], r['available_stock_kg'],
-                r['required_fabric_kg'], r['allocated_fabric_kg'],
+                r['required_fabric_kg'],
                 r['remaining_fabric_kg'], r['shortage_kg'], r['coverage_pct'], r['status']
             ])
 
@@ -1552,7 +1552,7 @@ def export_pending_plan_csv(cur, export_type, plan_id, filters):
             SELECT 
                 a.fabric_name, a.fabric_color, a.dia, a.gsm,
                 l.item_type, l.product_name, l.color, l.size,
-                l.net_pending_qty, a.required_fabric_kg, a.allocated_fabric_kg,
+                l.net_pending_qty, a.required_fabric_kg,
                 l.cuttable_qty, l.hold_qty, l.shortage_kg, l.priority, l.status
             FROM pending_qty_fabric_allocations a
             JOIN pending_qty_plan_lines l ON a.plan_line_id = l.id
@@ -1562,7 +1562,7 @@ def export_pending_plan_csv(cur, export_type, plan_id, filters):
         writer.writerow([
             'Fabric Name', 'Fabric Color', 'Dia', 'GSM', 'Product Type',
             'Product / Common Group', 'Color', 'Size', 'Net Pending Qty',
-            'Required Fabric (KG)', 'Allocated Fabric (KG)', 'Cuttable Qty',
+            'Required Fabric (KG)', 'Cuttable Qty',
             'Hold Qty', 'Shortage (KG)', 'Priority', 'Status'
         ])
         for r in cur.fetchall():

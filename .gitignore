@@ -1,15 +1,14 @@
-﻿# Environment Configuration & Secrets
+# Environment Configuration & Secrets
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
 
 # Python Bytecode & Cache
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
 *.py[cod]
-*.class
+*$py.class
 *.so
 .Python
 
@@ -19,15 +18,10 @@ venv/
 ENV/
 env/
 
-# Scratch, Logs, and Local Temporary Files
-scratch/
+# Logs & Debugging
 *.log
-*.tmp
-
-# Database Backups & Test Outputs
-*.bak
-*backup*.json
-planning_contributions_backup.json
+npm-debug.log*
+yarn-debug.log*
 
 # IDE & OS Metadata
 .DS_Store

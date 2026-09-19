@@ -1893,6 +1893,11 @@
                                 style="padding: 9px 18px; font-size: 13px; font-weight: 600;">
                                 <i class="fa-solid fa-layer-group"></i> 3. Fab Required
                             </button>
+                            <button id="pending-subtab-btn-excel" class="nav-tab-btn"
+                                onclick="switchPendingSubTab('excel-planning')"
+                                style="padding: 9px 18px; font-size: 13px; font-weight: 600;">
+                                <i class="fa-solid fa-table-cells"></i> 4. Excel Planning
+                            </button>
                         </div>
 
                         <!-- TAB 1: PENDING QTY PLAN -->
@@ -2069,6 +2074,15 @@
                                                         </button>
                                                     </div>
                                                 </th>
+                                                <th style="min-width: 110px; text-align: center; vertical-align: middle;">
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                        <span>Remark</span>
+                                                        <button id="pending-filter-btn-remark" class="pending-col-filter-btn"
+                                                            onclick="openPendingPlanFilter('remark', event)" title="Filter by Remark">
+                                                            <i class="fa-solid fa-filter"></i>
+                                                        </button>
+                                                    </div>
+                                                </th>
                                                 <th style="min-width: 90px; text-align: center; vertical-align: middle;">
                                                     <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
                                                         <span>Status</span>
@@ -2082,7 +2096,7 @@
                                         </thead>
                                         <tbody id="pending-plan-table-body">
                                             <tr>
-                                                <td colspan="13"
+                                                <td colspan="14"
                                                     style="text-align: center; padding: 40px; color: var(--text-muted);">
                                                     No pending planning data available for the selected filters. Please
                                                     click <strong>Recalculate & Refresh</strong>.
@@ -2099,6 +2113,7 @@
                                                 <td id="foot-pending-planned" style="text-align: right;">0</td>
                                                 <td id="foot-pending-net"
                                                     style="text-align: right; color: var(--primary-color);">0</td>
+                                                <td></td>
                                                 <td></td>
                                             </tr>
                                         </tfoot>
@@ -2470,15 +2485,6 @@
                                                 </th>
                                                 <th style="min-width: 110px; text-align: right; vertical-align: middle;">
                                                     <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
-                                                        <span>Allocated (KG)</span>
-                                                        <button id="fab-required-filter-btn-allocated_fabric_kg" class="pending-col-filter-btn"
-                                                            onclick="openFabRequiredFilter('allocated_fabric_kg', event)" title="Filter by Allocated">
-                                                            <i class="fa-solid fa-filter"></i>
-                                                        </button>
-                                                    </div>
-                                                </th>
-                                                <th style="min-width: 110px; text-align: right; vertical-align: middle;">
-                                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
                                                         <span>Remaining (KG)</span>
                                                         <button id="fab-required-filter-btn-remaining_fabric_kg" class="pending-col-filter-btn"
                                                             onclick="openFabRequiredFilter('remaining_fabric_kg', event)" title="Filter by Remaining">
@@ -2518,7 +2524,7 @@
                                         </thead>
                                         <tbody id="fab-required-table-body">
                                             <tr>
-                                                <td colspan="14"
+                                                <td colspan="13"
                                                     style="text-align: center; padding: 40px; color: var(--text-muted);">
                                                     No fabric pool data available. Please select a plan and click
                                                     <strong>Recalculate & Refresh</strong>.
@@ -2531,7 +2537,6 @@
                                                 <td colspan="6" style="text-align: right;">Totals:</td>
                                                 <td id="foot-fabric-avail" style="text-align: right;">0.00</td>
                                                 <td id="foot-fabric-req" style="text-align: right;">0.00</td>
-                                                <td id="foot-fabric-alloc" style="text-align: right;">0.00</td>
                                                 <td></td>
                                                 <td id="foot-fabric-shortage"
                                                     style="text-align: right; color: #ef4444;">0.00</td>
@@ -2542,6 +2547,128 @@
                                 </div>
                                 <div id="fab-required-pagination"
                                     style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border-color); font-size: 12px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TAB 4: EXCEL PLANNING (ISOLATED PRESENTATION VIEW) -->
+                        <div id="pending-subtab-view-excel" class="pending-subtab-view hidden">
+                            <div class="excel-planning-container" style="display: flex; flex-direction: column; gap: 14px;">
+                                <!-- Top Filter & Fixed KPI Bar -->
+                                <div class="excel-top-bar"
+                                    style="background: var(--bg-card); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 12px;">
+                                    
+                                    <!-- Row 1: Metric Selector & 4 Fixed Independent KPI Cards -->
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <label style="font-size: 11.5px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Matrix Metric:</label>
+                                            <select id="excel-metric-select" onchange="onExcelMetricChange(this.value)"
+                                                class="form-control"
+                                                style="width: 190px; height: 32px; font-size: 12px; font-weight: 600; padding: 0 10px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px;">
+                                                <option value="net_pending_qty" selected>Net Pending Qty</option>
+                                                <option value="cuttable_qty">Cuttable Qty</option>
+                                                <option value="requirement_qty">Pending Order Qty</option>
+                                                <option value="hold_qty">Non Cuttable Qty</option>
+                                                <option value="fg_qty">FG Stock</option>
+                                                <option value="wip_qty">WIP Qty</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- 4 Fixed KPI Cards -->
+                                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                            <div class="excel-kpi-badge"
+                                                style="display: flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); padding: 5px 12px; border-radius: 6px;">
+                                                <span style="font-size: 11px; font-weight: 600; color: #10b981; text-transform: uppercase;">Cuttable Qty:</span>
+                                                <strong id="excel-kpi-cuttable" style="font-size: 13px; font-weight: 700; color: #10b981;">0</strong>
+                                            </div>
+                                            <div class="excel-kpi-badge"
+                                                style="display: flex; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); padding: 5px 12px; border-radius: 6px;">
+                                                <span style="font-size: 11px; font-weight: 600; color: var(--primary-color); text-transform: uppercase;">Net Pending Qty:</span>
+                                                <strong id="excel-kpi-net-pending" style="font-size: 13px; font-weight: 700; color: var(--primary-color);">0</strong>
+                                            </div>
+                                            <div class="excel-kpi-badge"
+                                                style="display: flex; align-items: center; gap: 8px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.3); padding: 5px 12px; border-radius: 6px;">
+                                                <span style="font-size: 11px; font-weight: 600; color: #818cf8; text-transform: uppercase;">Pending Order Qty:</span>
+                                                <strong id="excel-kpi-order" style="font-size: 13px; font-weight: 700; color: #818cf8;">0</strong>
+                                            </div>
+                                            <div class="excel-kpi-badge"
+                                                style="display: flex; align-items: center; gap: 8px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); padding: 5px 12px; border-radius: 6px;">
+                                                <span style="font-size: 11px; font-weight: 600; color: #f59e0b; text-transform: uppercase;">Non Cuttable Qty:</span>
+                                                <strong id="excel-kpi-non-cuttable" style="font-size: 13px; font-weight: 700; color: #f59e0b;">0</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Row 2: Secondary Selection & Actions Row -->
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
+                                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                            <!-- Group / Category Dropdown -->
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <label style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary);">Group / Category:</label>
+                                                <select id="excel-group-select" onchange="onExcelGroupChange(this.value)"
+                                                    class="form-control"
+                                                    style="min-width: 170px; height: 32px; font-size: 12px; padding: 0 10px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px;">
+                                                    <option value="ALL">All Groups</option>
+                                                </select>
+                                            </div>
+
+                                            <!-- S.CODE Multi-Select Dropdown -->
+                                            <div class="excel-scode-dropdown-wrapper" style="position: relative;">
+                                                <button id="excel-scode-dropdown-btn" type="button" class="btn btn-outline"
+                                                    onclick="toggleExcelSCodeDropdown(event)"
+                                                    style="height: 32px; padding: 0 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fa-solid fa-tags"></i>
+                                                    <span>S.Code: <strong id="excel-scode-btn-label">All</strong></span>
+                                                    <i class="fa-solid fa-chevron-down" style="font-size: 10px; margin-left: 4px;"></i>
+                                                </button>
+                                                <div id="excel-scode-dropdown-popup" class="excel-scode-popup hidden"
+                                                    style="position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 1000; width: 260px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); padding: 10px; font-size: 12px;">
+                                                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                                        <input type="text" id="excel-scode-search" placeholder="Search S.Code..."
+                                                            oninput="onExcelSCodeSearch(this.value)"
+                                                            style="width: 100%; height: 28px; font-size: 11.5px; padding: 0 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary);">
+                                                    </div>
+                                                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                                        <button type="button" class="btn btn-sm btn-outline" onclick="selectExcelAllSCodes()" style="font-size: 11px; padding: 2px 8px;">Select All</button>
+                                                        <button type="button" class="btn btn-sm btn-outline" onclick="clearExcelSCodes()" style="font-size: 11px; padding: 2px 8px;">Clear</button>
+                                                    </div>
+                                                    <div id="excel-scode-checklist" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;">
+                                                        <!-- Checkbox items rendered dynamically -->
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Group Actions & XLSX Export -->
+                                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                            <div style="display: flex; gap: 6px;">
+                                                <button class="btn btn-sm btn-outline" onclick="expandAllExcelGroups()"
+                                                    title="Expand All Groups" style="height: 32px; padding: 0 10px; font-size: 11.5px;">
+                                                    <i class="fa-solid fa-angles-down"></i> Expand All
+                                                </button>
+                                                <button class="btn btn-sm btn-outline" onclick="collapseAllExcelGroups()"
+                                                    title="Collapse All Groups" style="height: 32px; padding: 0 10px; font-size: 11.5px;">
+                                                    <i class="fa-solid fa-angles-up"></i> Collapse All
+                                                </button>
+                                            </div>
+
+                                            <button class="btn btn-outline" onclick="exportExcelPlanningMatrix()"
+                                                title="Export current Excel planning matrix to .xlsx"
+                                                style="height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-size: 12px; border-color: #107c41; color: #10b981;">
+                                                <i class="fa-solid fa-file-excel" style="color: #107c41;"></i> Export Excel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Excel Matrix Viewport Card -->
+                                <div class="card" style="padding: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div id="excel-matrix-table-container" class="excel-table-scroll"
+                                        style="max-height: 600px; overflow: auto; background: var(--bg-card);">
+                                        <div id="excel-matrix-empty" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                            No planning data available
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
