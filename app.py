@@ -11174,6 +11174,8 @@ def save_bulk_feed_data():
         total_invalid = 0
         total_duplicate = 0
         
+        total_valid = 0
+        
         # 1. Independent Backend Re-Validation
         for sheet_title, (table_name, tab_slug) in sheet_mapping.items():
             rows = sheets_data.get(sheet_title) or sheets_data.get(tab_slug) or []
@@ -11183,16 +11185,17 @@ def save_bulk_feed_data():
             total_rows += len(val_rows)
             total_invalid += len([r for r in val_rows if r.get('validation_status') == 'INVALID'])
             total_duplicate += len([r for r in val_rows if r.get('validation_status') == 'DUPLICATE'])
+            total_valid += len([r for r in val_rows if r.get('validation_status') == 'VALID'])
             
         if total_rows == 0:
             cur.close()
             return jsonify({'success': False, 'message': 'No records found in any of the 5 sheets to save.'}), 400
             
-        if total_invalid > 0 or total_duplicate > 0:
+        if total_valid == 0:
             cur.close()
             return jsonify({
                 'success': False,
-                'message': f'Cannot save bulk feed: Found {total_invalid} invalid and {total_duplicate} duplicate records. Please correct and re-validate before saving.',
+                'message': 'No valid records found to save. Please correct invalid records and re-validate.',
                 'invalid_count': total_invalid,
                 'duplicate_count': total_duplicate
             }), 400

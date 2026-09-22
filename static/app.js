@@ -16320,16 +16320,25 @@ function updateBulkFeedKpiCards() {
     const footerStatus = document.getElementById('bulk-feed-footer-status');
 
     if (btnSave) {
-        if (bulkFeedState.isValidated && total > 0 && invalid === 0 && duplicate === 0 && valid === total) {
+        if (bulkFeedState.isValidated && valid > 0) {
             btnSave.disabled = false;
-            if (footerStatus) {
-                footerStatus.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--accent-green);"></i> <span style="color: var(--accent-green); font-weight: 600;">All ${total} records are VALID and ready to save.</span>`;
+            if (invalid === 0 && duplicate === 0) {
+                btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Save Bulk Feed</span>';
+                if (footerStatus) {
+                    footerStatus.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--accent-green);"></i> <span style="color: var(--accent-green); font-weight: 600;">All ${total.toLocaleString()} records are VALID and ready to save.</span>`;
+                }
+            } else {
+                btnSave.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> <span>Save Valid Records (${valid.toLocaleString()})</span>`;
+                if (footerStatus) {
+                    footerStatus.innerHTML = `<i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i> <span style="color: var(--accent-green); font-weight: 600;">${valid.toLocaleString()} valid records ready to save</span> <span style="color: var(--text-secondary);">(${(invalid + duplicate).toLocaleString()} invalid/duplicate rows will be excluded).</span>`;
+                }
             }
         } else {
             btnSave.disabled = true;
+            btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <span>Save Bulk Feed</span>';
             if (bulkFeedState.isValidated) {
                 if (footerStatus) {
-                    footerStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-red);"></i> <span style="color: var(--accent-red); font-weight: 600;">${invalid} invalid and ${duplicate} duplicate rows require correction before saving.</span>`;
+                    footerStatus.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-red);"></i> <span style="color: var(--accent-red); font-weight: 600;">No valid records to save. Please correct invalid rows.</span>`;
                 }
             }
         }
@@ -16837,12 +16846,14 @@ async function saveBulkFeedGridData() {
     let totalInvalid = 0;
     let totalDuplicate = 0;
     let totalRows = 0;
+    let totalValid = 0;
 
     Object.keys(bulkFeedState.sheets).forEach(sheetName => {
         const rows = bulkFeedState.sheets[sheetName] || [];
         totalRows += rows.length;
         totalInvalid += rows.filter(r => r.validation_status === 'INVALID' || r.validation_status === 'NEEDS_REVALIDATION').length;
         totalDuplicate += rows.filter(r => r.validation_status === 'DUPLICATE').length;
+        totalValid += rows.filter(r => r.validation_status === 'VALID').length;
     });
 
     if (totalRows === 0) {
@@ -16850,8 +16861,8 @@ async function saveBulkFeedGridData() {
         return;
     }
 
-    if (totalInvalid > 0 || totalDuplicate > 0) {
-        showToast('Cannot Save', `Please correct all ${totalInvalid} invalid and ${totalDuplicate} duplicate rows before saving.`, 'error');
+    if (totalValid === 0) {
+        showToast('Cannot Save', 'No valid records found to save. Please correct invalid rows and re-validate.', 'error');
         return;
     }
 
@@ -16861,7 +16872,7 @@ async function saveBulkFeedGridData() {
         btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
     }
 
-    showLoader(true, "Executing atomic bulk save across all 5 transaction tables...");
+    showLoader(true, `Executing atomic bulk save of ${totalValid.toLocaleString()} valid records...`);
     try {
         const response = await fetch('/api/planning-stock/bulk-feed/save', {
             method: 'POST',
@@ -20130,6 +20141,25 @@ function getRecordMetricVal(r, metric) {
     return Number(r[metric]) || 0;
 }
 
+function isExcelCommonRecord(r) {
+    if (!r) return false;
+    const itemType = String(r.item_type || '').toLowerCase().trim();
+    if (itemType === 'common' || itemType === 'common production' || itemType === 'common member') {
+        return true;
+    }
+    if (itemType === 'stand alone' || itemType === 'standalone') {
+        return false;
+    }
+    return Boolean(r.common_production_name && String(r.common_production_name).trim() !== '');
+}
+
+function getExcelRecordGroupKey(r) {
+    if (isExcelCommonRecord(r)) {
+        return String(r.common_production_name || r.product_name || 'Common Production').trim();
+    }
+    return String(r.product_name || 'Stand Alone').trim();
+}
+
 function renderExcelPlanningTab() {
     const container = document.getElementById('excel-matrix-table-container');
     if (!container) return;
@@ -20172,7 +20202,7 @@ function renderExcelPlanningTab() {
     const distinctGroups = new Set();
 
     allRecords.forEach(r => {
-        const grp = r.common_production_name || r.category || 'General';
+        const grp = getExcelRecordGroupKey(r);
         if (grp) distinctGroups.add(grp);
     });
 
@@ -20193,7 +20223,7 @@ function renderExcelPlanningTab() {
     // 3. Local In-Memory Filtering (Pure Read-Only Projection)
     const filteredRecords = allRecords.filter(r => {
         if (excelPlanningState.selectedGroup !== 'ALL') {
-            const grp = r.common_production_name || r.category || 'General';
+            const grp = getExcelRecordGroupKey(r);
             if (grp !== excelPlanningState.selectedGroup) return false;
         }
         if (excelPlanningState.selectedSCodes.size > 0) {
@@ -20223,16 +20253,16 @@ function renderExcelPlanningTab() {
     });
     const sizeCols = sortGarmentSizes(sizeSet);
 
-    // Grouping by Group Header -> Product/Color Row
+    // Grouping by Stand Alone Product Name or Common Production Name -> Color Row
     const groupsMap = new Map(); // groupKey -> Map(rowKey -> { label, sizes: {}, total: 0 })
 
     filteredRecords.forEach(r => {
-        const grpKey = r.common_production_name ? ('#' + r.common_production_name.replace(/^#/, '')) : (r.category ? ('#' + r.category) : '#GENERAL');
+        const grpKey = getExcelRecordGroupKey(r);
         if (!groupsMap.has(grpKey)) {
             groupsMap.set(grpKey, new Map());
         }
         const rowMap = groupsMap.get(grpKey);
-        const rowLabel = r.color ? String(r.color).trim() : (r.product_name || 'Item');
+        const rowLabel = r.color ? String(r.color).trim() : 'DEFAULT';
 
         if (!rowMap.has(rowLabel)) {
             rowMap.set(rowLabel, { label: rowLabel, sizes: {}, total: 0 });
@@ -20370,11 +20400,16 @@ function renderExcelPlanningTab() {
 function getDistinctSCodeOptions(allRecords) {
     const distinctNames = new Set();
     (allRecords || []).forEach(r => {
-        if (r.product_name && String(r.product_name).trim()) {
-            distinctNames.add(String(r.product_name).trim());
-        }
-        if (r.common_production_name && String(r.common_production_name).trim()) {
-            distinctNames.add(String(r.common_production_name).trim());
+        if (isExcelCommonRecord(r)) {
+            if (r.common_production_name && String(r.common_production_name).trim()) {
+                distinctNames.add(String(r.common_production_name).trim());
+            } else if (r.product_name && String(r.product_name).trim()) {
+                distinctNames.add(String(r.product_name).trim());
+            }
+        } else {
+            if (r.product_name && String(r.product_name).trim()) {
+                distinctNames.add(String(r.product_name).trim());
+            }
         }
     });
     return Array.from(distinctNames).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
