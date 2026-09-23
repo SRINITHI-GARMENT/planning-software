@@ -10668,18 +10668,10 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                 
             if not product_name:
                 errors.append("Product Name is required.")
-            elif product_name.lower() not in product_map:
-                errors.append(f"Product '{product_name}' not found in Product Master.")
-                
             if not color_name:
                 errors.append("Color is required.")
-            elif color_name.lower() not in color_map and color_name.lower() not in color_code_map:
-                errors.append(f"Color '{color_name}' not found in Color Master.")
-                
             if not size_name:
                 errors.append("Size is required.")
-            elif size_name.lower() not in size_map and size_name.lower() not in size_code_map:
-                errors.append(f"Size '{size_name}' not found in Size Master.")
                 
             if not qty_val:
                 errors.append("Qty is required and should be greater than zero.")
@@ -10690,6 +10682,59 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         errors.append("Qty must be greater than zero.")
                 except ValueError:
                     errors.append(f"Invalid numeric Qty '{qty_val}'.")
+
+            resolved_g_code = None
+            if color_name:
+                col_info = None
+                if color_name.lower() in color_map:
+                    col_info = color_map[color_name.lower()]
+                elif color_name.lower() in color_code_map:
+                    col_info = color_code_map[color_name.lower()]
+                
+                if not col_info:
+                    errors.append(f"Color '{color_name}' not found in Color Master. Suggested: Select a valid Color.")
+                else:
+                    g_code = col_info['code'].lower().strip()
+                    resolved_g_code = g_code
+
+            order_size_id = None
+            if size_name:
+                if size_name.lower() in size_map:
+                    order_size_id = size_map[size_name.lower()]['id']
+                elif size_name.lower() in size_code_map:
+                    order_size_id = size_code_map[size_name.lower()]['id']
+                else:
+                    errors.append(f"Size '{size_name}' not found in Size Master. Suggested: Select an active Size.")
+
+            if not errors and product_name:
+                prod_name_lower = product_name.lower().strip()
+                if prod_name_lower in common_prod_map:
+                    common_id = common_prod_map[prod_name_lower]
+                    members = [p for p in product_rows if p[3] == common_id]
+                    if not members:
+                        errors.append(f"No member products configured in Common Production '{product_name}'.")
+                    else:
+                        valid_member_found = False
+                        for m in members:
+                            m_id = m[1]
+                            has_size = (m_id, order_size_id) in product_size_set
+                            has_color = (m_id, resolved_g_code) in product_color_set
+                            if has_size and has_color:
+                                valid_member_found = True
+                                break
+                        if not valid_member_found:
+                            errors.append(f"Color '{color_name}' or Size '{size_name}' is not configured for any member in Common Production '{product_name}'.")
+                elif prod_name_lower in product_db_map:
+                    p_info = product_db_map[prod_name_lower]
+                    prod_id = p_info['id']
+                    has_size = (prod_id, order_size_id) in product_size_set
+                    has_color = (prod_id, resolved_g_code) in product_color_set
+                    if not has_color:
+                        errors.append(f"Color '{color_name}' not mapped for Product '{product_name}'.")
+                    elif not has_size:
+                        errors.append(f"Size '{size_name}' not mapped for Product '{product_name}'.")
+                else:
+                    errors.append(f"Product '{product_name}' not found in Product Master. Suggested: Select an existing Product.")
                     
             row_copy['product_name'] = product_name
             row_copy['color'] = color_name
