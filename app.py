@@ -10431,7 +10431,13 @@ def fetch_stock_wip_master_data(cur):
     cur.execute("SELECT size, size_code, id FROM size_master;")
     size_master_rows = cur.fetchall()
     size_map = { r[0].lower().strip(): {'code': r[1], 'id': r[2]} for r in size_master_rows }
-    size_code_map = { r[1].lower().strip(): {'size': r[0], 'id': r[2]} for r in size_master_rows }
+    size_code_map = { r[1].lower().strip(): {'size': r[0], 'id': r[2]} for r in size_master_rows if r[1] }
+    size_ids_by_name = {}
+    for r in size_master_rows:
+        s_name = r[0].lower().strip()
+        size_ids_by_name.setdefault(s_name, []).append(r[2])
+        if r[1]:
+            size_ids_by_name.setdefault(r[1].lower().strip(), []).append(r[2])
     
     cur.execute("SELECT fabric_id, dia FROM fabric_dia_mapping;")
     fabric_dia_rows = cur.fetchall()
@@ -10455,6 +10461,7 @@ def fetch_stock_wip_master_data(cur):
         'product_size_set': product_size_set,
         'size_map': size_map,
         'size_code_map': size_code_map,
+        'size_ids_by_name': size_ids_by_name,
         'fabric_dia_set': fabric_dia_set,
         'fabric_dias_map': fabric_dias_map
     }
@@ -10474,6 +10481,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
     product_size_set = master_data['product_size_set']
     size_map = master_data['size_map']
     size_code_map = master_data['size_code_map']
+    size_ids_by_name = master_data.get('size_ids_by_name', {})
     fabric_dia_set = master_data['fabric_dia_set']
     
     normalized_tab = tab_slug.lower().replace(' ', '-').replace('_', '-')
@@ -10604,14 +10612,9 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                     g_code = col_info['code'].lower().strip()
                     resolved_g_code = g_code
 
-            wip_size_id = None
-            if size_name:
-                if size_name.lower() in size_map:
-                    wip_size_id = size_map[size_name.lower()]['id']
-                elif size_name.lower() in size_code_map:
-                    wip_size_id = size_code_map[size_name.lower()]['id']
-                else:
-                    errors.append(f"Size '{size_name}' not found in Size Master. Suggested: Select an active Size.")
+            wip_size_ids = size_ids_by_name.get(size_name.lower().strip(), [])
+            if not wip_size_ids and size_name:
+                errors.append(f"Size '{size_name}' not found in Size Master. Suggested: Select an active Size.")
 
             if not errors and product_name:
                 prod_name_lower = product_name.lower().strip()
@@ -10624,7 +10627,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         valid_member_found = False
                         for m in members:
                             m_id = m[1]
-                            has_size = (m_id, wip_size_id) in product_size_set
+                            has_size = any((m_id, sid) in product_size_set for sid in wip_size_ids)
                             has_color = (m_id, resolved_g_code) in product_color_set
                             if has_size and has_color:
                                 valid_member_found = True
@@ -10638,7 +10641,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                             errors.append(f"Product '{product_name}' is not configured as Stand Alone.")
                         else:
                             prod_id = p_info['id']
-                            has_size = (prod_id, wip_size_id) in product_size_set
+                            has_size = any((prod_id, sid) in product_size_set for sid in wip_size_ids)
                             has_color = (prod_id, resolved_g_code) in product_color_set
                             if not has_size:
                                 errors.append(f"Size '{size_name}' not mapped for Product '{product_name}'.")
@@ -10699,14 +10702,9 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                     g_code = col_info['code'].lower().strip()
                     resolved_g_code = g_code
 
-            order_size_id = None
-            if size_name:
-                if size_name.lower() in size_map:
-                    order_size_id = size_map[size_name.lower()]['id']
-                elif size_name.lower() in size_code_map:
-                    order_size_id = size_code_map[size_name.lower()]['id']
-                else:
-                    errors.append(f"Size '{size_name}' not found in Size Master. Suggested: Select an active Size.")
+            order_size_ids = size_ids_by_name.get(size_name.lower().strip(), [])
+            if not order_size_ids and size_name:
+                errors.append(f"Size '{size_name}' not found in Size Master. Suggested: Select an active Size.")
 
             if not errors and product_name:
                 prod_name_lower = product_name.lower().strip()
@@ -10719,7 +10717,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         valid_member_found = False
                         for m in members:
                             m_id = m[1]
-                            has_size = (m_id, order_size_id) in product_size_set
+                            has_size = any((m_id, sid) in product_size_set for sid in order_size_ids)
                             has_color = (m_id, resolved_g_code) in product_color_set
                             if has_size and has_color:
                                 valid_member_found = True
@@ -10729,7 +10727,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                 elif prod_name_lower in product_db_map:
                     p_info = product_db_map[prod_name_lower]
                     prod_id = p_info['id']
-                    has_size = (prod_id, order_size_id) in product_size_set
+                    has_size = any((prod_id, sid) in product_size_set for sid in order_size_ids)
                     has_color = (prod_id, resolved_g_code) in product_color_set
                     if not has_color:
                         errors.append(f"Color '{color_name}' not mapped for Product '{product_name}'.")
