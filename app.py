@@ -9083,12 +9083,13 @@ def calculate_balance_qty(cur, plan_name, financial_year, version, from_date_str
     cur.execute("SELECT global_color_code, display_color FROM color_master ORDER BY category DESC;")
     fallback_display = {r[0]: r[1] for r in cur.fetchall()}
 
-    # 3. Fetch Finished Goods Stock for active SKUs
+    # 3. Fetch Finished Goods Stock for active SKUs (only VALID rows)
     cur.execute("""
         SELECT LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size)), SUM(qty)
         FROM finished_goods
         WHERE LOWER(TRIM(product_name)) = ANY(%s)
           AND LOWER(TRIM(size)) = ANY(%s)
+          AND validation_status = 'VALID'
         GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size));
     """, (active_products, active_sizes))
     fg_map = {}
@@ -9153,12 +9154,13 @@ def calculate_balance_qty(cur, plan_name, financial_year, version, from_date_str
         """, (list(active_common_groups), active_sizes))
         wip_group_map = {(r[0], r[1]): float(r[2] or 0.0) for r in cur.fetchall()}
 
-    # 5. Fetch Pending Production for active SKUs
+    # 5. Fetch Pending Production for active SKUs (only VALID rows)
     cur.execute("""
         SELECT LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size)), SUM(qty)
         FROM pending_orders
         WHERE LOWER(TRIM(product_name)) = ANY(%s)
           AND LOWER(TRIM(size)) = ANY(%s)
+          AND validation_status = 'VALID'
         GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size));
     """, (active_products, active_sizes))
     pending_sku_map = {}
@@ -9934,15 +9936,15 @@ def get_fabric_req_data():
         # Fetch detail rows
         all_details = _get_fabric_req_details_raw(cur, plan_name, financial_year, version, from_date_str, to_date_str, consider_fg, consider_wip, consider_pending)
 
-        # Preload Stock & WIP
+        # Preload Stock & WIP (VALID rows only)
         stock_dict = {}
-        cur.execute("SELECT LOWER(TRIM(fabric_name)), LOWER(TRIM(color)), dia, SUM(weight_mtr) FROM fabric_stock GROUP BY 1, 2, 3")
+        cur.execute("SELECT LOWER(TRIM(fabric_name)), LOWER(TRIM(color)), dia, SUM(weight_mtr) FROM fabric_stock WHERE validation_status = 'VALID' GROUP BY 1, 2, 3")
         for fab, col, d, qty in cur.fetchall():
             d_val = float(d) if d is not None else 0.0
             stock_dict[(fab, col, d_val)] = float(qty)
 
         wip_dict = {}
-        cur.execute("SELECT LOWER(TRIM(fabric_name)), LOWER(TRIM(color)), dia, SUM(weight_mtr) FROM fabric_wip GROUP BY 1, 2, 3")
+        cur.execute("SELECT LOWER(TRIM(fabric_name)), LOWER(TRIM(color)), dia, SUM(weight_mtr) FROM fabric_wip WHERE validation_status = 'VALID' GROUP BY 1, 2, 3")
         for fab, col, d, qty in cur.fetchall():
             d_val = float(d) if d is not None else 0.0
             wip_dict[(fab, col, d_val)] = float(qty)
@@ -11018,33 +11020,31 @@ def save_planning_stock_data():
         
         # Backend re-validation
         validated_rows = validate_stock_wip_rows_internal(cur, tab, rows)
-        valid_rows = [r for r in validated_rows if r.get('validation_status') == 'VALID']
-        invalid_rows = [r for r in validated_rows if r.get('validation_status') != 'VALID']
         
-        if not valid_rows:
+        if not validated_rows:
             cur.close()
             return jsonify({
                 'success': True,
-                'message': 'No valid records to save.',
+                'message': 'No records to save.',
                 'saved_count': 0,
-                'remaining_rows': invalid_rows
+                'remaining_rows': []
             })
             
         if tab in ['fabric-stock', 'fabric-wip']:
             data_to_insert = [
                 (
                     r.get('fabric_name'),
-                    int(float(r.get('gsm', 0))),
-                    float(r.get('dia', 0)),
+                    int(float(r.get('gsm', 0) or 0)),
+                    float(r.get('dia', 0) or 0),
                     r.get('color'),
                     r.get('uom', 'KGS'),
-                    float(r.get('weight_mtr', 0)),
-                    'VALID',
-                    'Valid',
+                    float(r.get('weight_mtr', 0) or 0),
+                    r.get('validation_status', 'VALID'),
+                    r.get('validation_message', 'Valid'),
                     username,
                     username
                 )
-                for r in valid_rows
+                for r in validated_rows
             ]
             psycopg2.extras.execute_values(
                 cur,
@@ -11063,13 +11063,13 @@ def save_planning_stock_data():
                     r.get('size'),
                     r.get('production_type'),
                     r.get('production_group'),
-                    int(float(r.get('qty', 0))),
-                    'VALID',
-                    'Valid',
+                    int(float(r.get('qty', 0) or 0)),
+                    r.get('validation_status', 'VALID'),
+                    r.get('validation_message', 'Valid'),
                     username,
                     username
                 )
-                for r in valid_rows
+                for r in validated_rows
             ]
             psycopg2.extras.execute_values(
                 cur,
@@ -11086,13 +11086,13 @@ def save_planning_stock_data():
                     r.get('product_name'),
                     r.get('color'),
                     r.get('size'),
-                    int(float(r.get('qty', 0))),
-                    'VALID',
-                    'Valid',
+                    int(float(r.get('qty', 0) or 0)),
+                    r.get('validation_status', 'VALID'),
+                    r.get('validation_message', 'Valid'),
                     username,
                     username
                 )
-                for r in valid_rows
+                for r in validated_rows
             ]
             psycopg2.extras.execute_values(
                 cur,
@@ -11112,9 +11112,9 @@ def save_planning_stock_data():
         
         return jsonify({
             'success': True,
-            'message': 'Only valid records were saved.',
-            'saved_count': len(valid_rows),
-            'remaining_rows': invalid_rows
+            'message': 'Records saved successfully.',
+            'saved_count': len(validated_rows),
+            'remaining_rows': []
         })
     except Exception as e:
         if conn:
@@ -11218,7 +11218,6 @@ def save_bulk_feed_data():
         total_rows = 0
         total_invalid = 0
         total_duplicate = 0
-        
         total_valid = 0
         
         # 1. Independent Backend Re-Validation
@@ -11236,39 +11235,29 @@ def save_bulk_feed_data():
             cur.close()
             return jsonify({'success': False, 'message': 'No records found in any of the 5 sheets to save.'}), 400
             
-        if total_valid == 0:
-            cur.close()
-            return jsonify({
-                'success': False,
-                'message': 'No valid records found to save. Please correct invalid records and re-validate.',
-                'invalid_count': total_invalid,
-                'duplicate_count': total_duplicate
-            }), 400
-            
         # 2. Atomic Multi-Table Insertion
         inserted_counts = {}
         total_inserted = 0
         
         for sheet_title, (table_name, tab_slug) in sheet_mapping.items():
             val_rows = validated_sheets[sheet_title]
-            valid_rows = [r for r in val_rows if r.get('validation_status') == 'VALID']
             
-            if valid_rows:
+            if val_rows:
                 if tab_slug in ['fabric-stock', 'fabric-wip']:
                     data_to_insert = [
                         (
                             r.get('fabric_name'),
-                            int(float(r.get('gsm', 0))),
-                            float(r.get('dia', 0)),
+                            int(float(r.get('gsm', 0) or 0)),
+                            float(r.get('dia', 0) or 0),
                             r.get('color'),
                             r.get('uom', 'KGS'),
-                            float(r.get('weight_mtr', 0)),
-                            'VALID',
-                            'Valid',
+                            float(r.get('weight_mtr', 0) or 0),
+                            r.get('validation_status', 'VALID'),
+                            r.get('validation_message', 'Valid'),
                             username,
                             username
                         )
-                        for r in valid_rows
+                        for r in val_rows
                     ]
                     psycopg2.extras.execute_values(
                         cur,
@@ -11287,13 +11276,13 @@ def save_bulk_feed_data():
                             r.get('size'),
                             r.get('production_type', 'Common'),
                             r.get('production_group', 'Group A'),
-                            int(float(r.get('qty', 0))),
-                            'VALID',
-                            'Valid',
+                            int(float(r.get('qty', 0) or 0)),
+                            r.get('validation_status', 'VALID'),
+                            r.get('validation_message', 'Valid'),
                             username,
                             username
                         )
-                        for r in valid_rows
+                        for r in val_rows
                     ]
                     psycopg2.extras.execute_values(
                         cur,
@@ -11310,13 +11299,13 @@ def save_bulk_feed_data():
                             r.get('product_name'),
                             r.get('color'),
                             r.get('size'),
-                            int(float(r.get('qty', 0))),
-                            'VALID',
-                            'Valid',
+                            int(float(r.get('qty', 0) or 0)),
+                            r.get('validation_status', 'VALID'),
+                            r.get('validation_message', 'Valid'),
                             username,
                             username
                         )
-                        for r in valid_rows
+                        for r in val_rows
                     ]
                     psycopg2.extras.execute_values(
                         cur,
@@ -11328,8 +11317,8 @@ def save_bulk_feed_data():
                         template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())"
                     )
                     
-            inserted_counts[sheet_title] = len(valid_rows)
-            total_inserted += len(valid_rows)
+            inserted_counts[sheet_title] = len(val_rows)
+            total_inserted += len(val_rows)
             
         cur.execute("DELETE FROM balance_qty_cache;")
         

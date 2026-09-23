@@ -12379,13 +12379,7 @@ async function saveStockWipData() {
         return;
     }
 
-    const validRows = stockWipAllData.filter(r => r.validation_status === 'VALID' || r['Validation Status'] === 'VALID');
-    if (validRows.length === 0) {
-        alert("No valid rows found to save. All rows are invalid or duplicate.");
-        return;
-    }
-
-    showLoader(true, "Saving valid rows to database...");
+    showLoader(true, "Saving records to database...");
     try {
         const response = await fetch('/api/planning-stock/save', {
             method: 'POST',
@@ -12412,7 +12406,7 @@ async function saveStockWipData() {
                 stockWipMode = 'saved';
                 await fetchStockWipSavedData();
             } else {
-                alert(`Only valid records were saved (${savedCount} saved). ${stockWipAllData.length} invalid/duplicate records remain on screen.`);
+                alert(`Saved ${savedCount} records. ${stockWipAllData.length} records remain on screen.`);
                 stockWipCurrentPage = 1;
                 renderStockWipGrid();
             }

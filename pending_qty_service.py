@@ -271,6 +271,7 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
         FROM finished_goods
         WHERE LOWER(TRIM(product_name)) = ANY(%s)
           AND LOWER(TRIM(size)) = ANY(%s)
+          AND validation_status = 'VALID'
         GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size));
     """, (active_products, active_sizes))
     fg_map = {}
