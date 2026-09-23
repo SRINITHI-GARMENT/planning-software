@@ -17159,6 +17159,10 @@ async function loadActivePendingSubTabTable() {
     } else if (pendingPlanningState.activeSubTab === 'fab-required') {
         await loadFabRequiredTable(pendingPlanningState.page);
     } else if (pendingPlanningState.activeSubTab === 'excel-planning') {
+        const isAllScope = (excelPlanningState.metric === 'all_fg_stock' || excelPlanningState.metric === 'all_wip_qty' || excelPlanningState.metric === 'all_stock_plus_wip');
+        if (isAllScope && !excelPlanningState.allCachedRecords) {
+            await fetchExcelAllStockWipData();
+        }
         renderExcelPlanningTab();
     }
 }
@@ -20089,13 +20093,15 @@ function exportLeadDaysExcel() {
 // =============================================================
 
 const excelPlanningState = {
-    metric: 'net_pending_qty',       // 'net_pending_qty' | 'cuttable_qty' | 'requirement_qty' | 'hold_qty' | 'fg_qty' | 'wip_qty'
+    metric: 'net_pending_qty',       // 'net_pending_qty' | 'cuttable_qty' | 'requirement_qty' | 'hold_qty' | 'fg_qty' | 'wip_qty' | 'stock_plus_wip' | 'all_fg_stock' | 'all_wip_qty' | 'all_stock_plus_wip'
     selectedGroup: 'ALL',
     selectedSCodes: new Set(),
     sCodeSearchTerm: '',
     collapsedGroups: new Set(),
     hasActualSCode: false,
-    lastBuiltMatrix: null
+    lastBuiltMatrix: null,
+    allCachedRecords: null,
+    isLoadingAllStockWip: false
 };
 
 const GARMENT_SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', 'XXXL', '4XL', 'XXXXL', '5XL', 'XXXXXL', 'FREE', 'FS'];
@@ -20121,6 +20127,10 @@ function getExcelMetricTitle(m) {
         case 'hold_qty': return 'Non Cuttable Qty';
         case 'fg_qty': return 'FG Stock';
         case 'wip_qty': return 'WIP Qty';
+        case 'stock_plus_wip': return 'Stock + WIP';
+        case 'all_fg_stock': return 'All FG Stock';
+        case 'all_wip_qty': return 'All WIP Qty';
+        case 'all_stock_plus_wip': return 'All Stock + WIP';
         default: return m;
     }
 }
@@ -20132,6 +20142,10 @@ function getRecordMetricVal(r, metric) {
     if (metric === 'hold_qty') return Number(r.hold_qty) || 0;
     if (metric === 'fg_qty') return Number(r.fg_qty) || 0;
     if (metric === 'wip_qty') return Number(r.wip_qty) || 0;
+    if (metric === 'stock_plus_wip') return (Number(r.fg_qty) || 0) + (Number(r.wip_qty) || 0);
+    if (metric === 'all_fg_stock') return Number(r.fg_qty) || 0;
+    if (metric === 'all_wip_qty') return Number(r.wip_qty) || 0;
+    if (metric === 'all_stock_plus_wip') return (Number(r.fg_qty) || 0) + (Number(r.wip_qty) || 0);
     return Number(r[metric]) || 0;
 }
 
@@ -20154,28 +20168,144 @@ function getExcelRecordGroupKey(r) {
     return String(r.product_name || 'Stand Alone').trim();
 }
 
+async function fetchExcelAllStockWipData() {
+    if (excelPlanningState.isLoadingAllStockWip) return;
+    excelPlanningState.isLoadingAllStockWip = true;
+
+    try {
+        const [fgRes, wipRes, prodRes, colRes] = await Promise.all([
+            fetch('/api/planning-stock/data?tab=finished-goods'),
+            fetch('/api/planning-stock/data?tab=production-wip'),
+            fetch('/api/masters/products'),
+            fetch('/api/masters/colors')
+        ]);
+
+        const fgData = await fgRes.json();
+        const wipData = await wipRes.json();
+        const prodData = await prodRes.json();
+        const colData = await colRes.json();
+
+        // 1. Build Product Meta Lookup Map
+        const prodMap = {};
+        if (prodData && prodData.success && Array.isArray(prodData.products)) {
+            prodData.products.forEach(p => {
+                if (p.product_name) {
+                    prodMap[p.product_name.trim().toUpperCase()] = {
+                        product_name: p.product_name.trim(),
+                        production_type: p.production_type || 'Stand Alone',
+                        common_production_id: p.common_production_id,
+                        common_production_name: p.common_production_name || ''
+                    };
+                }
+            });
+        }
+
+        // 2. Build Secondary -> Primary Color Lookup Map
+        const secondaryToPrimaryMap = {};
+        if (colData && colData.success && Array.isArray(colData.colors)) {
+            const primaryByCode = {};
+            colData.colors.forEach(c => {
+                if (c.category === 'Primary' && c.global_color_code && c.display_color) {
+                    primaryByCode[c.global_color_code.trim().toUpperCase()] = c.display_color.trim();
+                }
+            });
+            colData.colors.forEach(c => {
+                if (c.category === 'Secondary' && c.global_color_code && c.display_color) {
+                    const primaryName = primaryByCode[c.global_color_code.trim().toUpperCase()];
+                    if (primaryName) {
+                        secondaryToPrimaryMap[c.display_color.trim().toUpperCase()] = primaryName;
+                    }
+                }
+            });
+        }
+
+        const unifiedRecords = [];
+
+        // 3. Process Valid Finished Goods Records
+        if (fgData && fgData.success && Array.isArray(fgData.data)) {
+            fgData.data.forEach(r => {
+                const status = String(r.validation_status || '').trim().toUpperCase();
+                if (status !== 'VALID') return;
+
+                const rawProdName = String(r.product_name || '').trim();
+                const prodMeta = prodMap[rawProdName.toUpperCase()];
+                const isCommon = prodMeta && prodMeta.production_type === 'Common';
+                const itemType = isCommon ? 'Common' : 'Stand Alone';
+                const commonProdName = isCommon ? (prodMeta.common_production_name || '') : '';
+
+                let color = String(r.color || '').trim();
+                if (secondaryToPrimaryMap[color.toUpperCase()]) {
+                    color = secondaryToPrimaryMap[color.toUpperCase()];
+                }
+
+                unifiedRecords.push({
+                    id: `fg_${r.id}`,
+                    product_name: rawProdName,
+                    item_type: itemType,
+                    common_production_name: commonProdName,
+                    color: color,
+                    size: String(r.size || '').trim(),
+                    fg_qty: Number(r.qty) || 0,
+                    wip_qty: 0,
+                    requirement_qty: 0,
+                    net_pending_qty: 0,
+                    cuttable_qty: 0,
+                    hold_qty: 0
+                });
+            });
+        }
+
+        // 4. Process Valid Production WIP Records
+        if (wipData && wipData.success && Array.isArray(wipData.data)) {
+            wipData.data.forEach(r => {
+                const status = String(r.validation_status || '').trim().toUpperCase();
+                if (status !== 'VALID') return;
+
+                const rawProdName = String(r.product_name || '').trim();
+                const prodMeta = prodMap[rawProdName.toUpperCase()];
+                const isCommon = (r.production_type === 'Common') || (prodMeta && prodMeta.production_type === 'Common');
+                const itemType = isCommon ? 'Common' : 'Stand Alone';
+                const commonProdName = r.production_group || (prodMeta && prodMeta.production_type === 'Common' ? prodMeta.common_production_name : '') || '';
+
+                let color = String(r.color || '').trim();
+                if (secondaryToPrimaryMap[color.toUpperCase()]) {
+                    color = secondaryToPrimaryMap[color.toUpperCase()];
+                }
+
+                unifiedRecords.push({
+                    id: `wip_${r.id}`,
+                    product_name: rawProdName,
+                    item_type: itemType,
+                    common_production_name: commonProdName,
+                    color: color,
+                    size: String(r.size || '').trim(),
+                    fg_qty: 0,
+                    wip_qty: Number(r.qty) || 0,
+                    requirement_qty: 0,
+                    net_pending_qty: 0,
+                    cuttable_qty: 0,
+                    hold_qty: 0
+                });
+            });
+        }
+
+        excelPlanningState.allCachedRecords = unifiedRecords;
+    } catch (err) {
+        console.error("Error fetching all stock/wip dataset for Tab 4:", err);
+        excelPlanningState.allCachedRecords = [];
+    } finally {
+        excelPlanningState.isLoadingAllStockWip = false;
+    }
+}
+
 function renderExcelPlanningTab() {
     const container = document.getElementById('excel-matrix-table-container');
     if (!container) return;
 
-    // Strict Empty Dataset Rule: Zero API calls, show clean empty state
-    const allRecords = pendingPlanningState.allRecords;
-    if (!allRecords || allRecords.length === 0) {
-        container.innerHTML = `
-            <div id="excel-matrix-empty" style="text-align: center; padding: 40px; color: var(--text-muted);">
-                <i class="fa-solid fa-circle-info" style="margin-right: 6px;"></i> No planning data available
-            </div>
-        `;
-        document.getElementById('excel-kpi-cuttable') && (document.getElementById('excel-kpi-cuttable').textContent = '0');
-        document.getElementById('excel-kpi-net-pending') && (document.getElementById('excel-kpi-net-pending').textContent = '0');
-        document.getElementById('excel-kpi-order') && (document.getElementById('excel-kpi-order').textContent = '0');
-        document.getElementById('excel-kpi-non-cuttable') && (document.getElementById('excel-kpi-non-cuttable').textContent = '0');
-        return;
-    }
-
-    // 1. Calculate 4 Fixed Independent KPI Cards using exact calculated plan values (Immutable summary)
+    // Strict KPI Card Calculation: Immutable summary ALWAYS from pendingPlanningState.allRecords
+    const planRecords = pendingPlanningState.allRecords || [];
     let kpiCuttable = 0, kpiNet = 0, kpiOrder = 0, kpiNonCut = 0;
-    allRecords.forEach(r => {
+    planRecords.forEach(r => {
         kpiNet += Number(r.net_pending_qty) || 0;
         kpiOrder += Number(r.requirement_qty) || 0;
         kpiCuttable += Number(r.cuttable_qty) || 0;
@@ -20191,11 +20321,25 @@ function renderExcelPlanningTab() {
     const elNon = document.getElementById('excel-kpi-non-cuttable');
     if (elNon) elNon.textContent = Math.round(kpiNonCut).toLocaleString();
 
-    // 2. Extract distinct Groups and S.CODE options (Derived from Product Name + Common Production Name)
-    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    // Data Scope Selection:
+    const isAllScope = (excelPlanningState.metric === 'all_fg_stock' || excelPlanningState.metric === 'all_wip_qty' || excelPlanningState.metric === 'all_stock_plus_wip');
+    const sourceRecords = isAllScope ? (excelPlanningState.allCachedRecords || []) : planRecords;
+
+    if (!sourceRecords || sourceRecords.length === 0) {
+        container.innerHTML = `
+            <div id="excel-matrix-empty" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <i class="fa-solid fa-circle-info" style="margin-right: 6px;"></i> ${isAllScope ? 'No valid Stock / WIP records found' : 'No planning data available'}
+            </div>
+        `;
+        excelPlanningState.lastBuiltMatrix = null;
+        return;
+    }
+
+    // 2. Extract distinct Groups and S.CODE options from active sourceRecords
+    const distinctSCodes = getDistinctSCodeOptions(sourceRecords);
     const distinctGroups = new Set();
 
-    allRecords.forEach(r => {
+    sourceRecords.forEach(r => {
         const grp = getExcelRecordGroupKey(r);
         if (grp) distinctGroups.add(grp);
     });
@@ -20215,7 +20359,7 @@ function renderExcelPlanningTab() {
     renderExcelSCodeDropdownUI(distinctSCodes);
 
     // 3. Local In-Memory Filtering (Pure Read-Only Projection)
-    const filteredRecords = allRecords.filter(r => {
+    const filteredRecords = sourceRecords.filter(r => {
         if (excelPlanningState.selectedGroup !== 'ALL') {
             const grp = getExcelRecordGroupKey(r);
             if (grp !== excelPlanningState.selectedGroup) return false;
@@ -20233,7 +20377,7 @@ function renderExcelPlanningTab() {
     if (filteredRecords.length === 0) {
         container.innerHTML = `
             <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                <i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No planning records match the active Tab 4 filters.
+                <i class="fa-solid fa-filter-circle-xmark" style="margin-right: 6px;"></i> No records match the active Tab 4 filters.
             </div>
         `;
         excelPlanningState.lastBuiltMatrix = null;
@@ -20441,9 +20585,21 @@ function renderExcelSCodeDropdownUI(scodes) {
     listContainer.innerHTML = html || `<div style="font-size: 11px; color: var(--text-muted); padding: 4px;">No matching style</div>`;
 }
 
-function onExcelMetricChange(newMetric) {
+async function onExcelMetricChange(newMetric) {
     excelPlanningState.metric = newMetric;
-    renderExcelPlanningTab(); // In-memory re-render only (0 API calls, KPI cards remain fixed)
+    const isAllScope = (newMetric === 'all_fg_stock' || newMetric === 'all_wip_qty' || newMetric === 'all_stock_plus_wip');
+    if (isAllScope && !excelPlanningState.allCachedRecords) {
+        const container = document.getElementById('excel-matrix-table-container');
+        if (container) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Loading complete Stock & WIP dataset...
+                </div>
+            `;
+        }
+        await fetchExcelAllStockWipData();
+    }
+    renderExcelPlanningTab(); // In-memory re-render only (0 DB operations, KPI cards remain fixed)
 }
 
 function onExcelGroupChange(newGroup) {
@@ -20461,8 +20617,9 @@ function toggleExcelSCodeDropdown(e) {
 
 function onExcelSCodeSearch(val) {
     excelPlanningState.sCodeSearchTerm = val || '';
-    const allRecords = pendingPlanningState.allRecords || [];
-    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    const isAllScope = (excelPlanningState.metric === 'all_fg_stock' || excelPlanningState.metric === 'all_wip_qty' || excelPlanningState.metric === 'all_stock_plus_wip');
+    const sourceRecords = isAllScope ? (excelPlanningState.allCachedRecords || []) : (pendingPlanningState.allRecords || []);
+    const distinctSCodes = getDistinctSCodeOptions(sourceRecords);
     renderExcelSCodeDropdownUI(distinctSCodes);
 }
 
@@ -20476,8 +20633,9 @@ function onExcelSCodeToggle(sc) {
 }
 
 function selectExcelAllSCodes() {
-    const allRecords = pendingPlanningState.allRecords || [];
-    const distinctSCodes = getDistinctSCodeOptions(allRecords);
+    const isAllScope = (excelPlanningState.metric === 'all_fg_stock' || excelPlanningState.metric === 'all_wip_qty' || excelPlanningState.metric === 'all_stock_plus_wip');
+    const sourceRecords = isAllScope ? (excelPlanningState.allCachedRecords || []) : (pendingPlanningState.allRecords || []);
+    const distinctSCodes = getDistinctSCodeOptions(sourceRecords);
     distinctSCodes.forEach(sc => {
         excelPlanningState.selectedSCodes.add(sc);
     });
