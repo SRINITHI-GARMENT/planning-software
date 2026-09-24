@@ -2205,7 +2205,7 @@ def colors_api():
     elif request.method == 'POST':
         data = request.json or {}
         global_code = data.get('global_color_code', '').strip().upper()
-        display = data.get('display_color', '').strip().upper()
+        display = data.get('display_color', '').strip()
         category = data.get('category', '').strip()
         status = data.get('status', 'Active').strip()
         
@@ -2240,7 +2240,7 @@ def colors_api():
 def update_color(id):
     data = request.json or {}
     global_code = data.get('global_color_code', '').strip().upper()
-    display = data.get('display_color', '').strip().upper()
+    display = data.get('display_color', '').strip()
     category = data.get('category', '').strip()
     status = data.get('status', 'Active').strip()
     
@@ -2304,7 +2304,7 @@ def bulk_add_colors():
     try:
         for c in colors:
             global_code = c.get('global_color_code', '').strip().upper()
-            display = c.get('display_color', '').strip().upper()
+            display = c.get('display_color', '').strip()
             category = c.get('category', 'Primary').strip()
             # Title case category
             if category.lower() == 'primary':
