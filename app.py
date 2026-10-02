@@ -10405,6 +10405,19 @@ def fetch_stock_wip_master_data(cur):
     color_map = { r[0].lower().strip(): {'code': r[1], 'id': r[2], 'category': r[3]} for r in color_master_rows }
     color_code_map = { r[1].lower().strip(): {'display': r[0], 'id': r[2], 'category': r[3]} for r in color_master_rows }
     
+    color_codes_by_name = {}
+    for r in color_master_rows:
+        disp_col = (r[0] or '').lower().strip()
+        g_code = (r[1] or '').lower().strip()
+        if disp_col and g_code:
+            codes = color_codes_by_name.setdefault(disp_col, [])
+            if g_code not in codes:
+                codes.append(g_code)
+        if g_code:
+            codes = color_codes_by_name.setdefault(g_code, [])
+            if g_code not in codes:
+                codes.append(g_code)
+    
     primary_color_by_code = {}
     for r in color_master_rows:
         disp_col = r[0]
@@ -10452,6 +10465,7 @@ def fetch_stock_wip_master_data(cur):
         'fabric_master_rows': fabric_master_rows,
         'color_map': color_map,
         'color_code_map': color_code_map,
+        'color_codes_by_name': color_codes_by_name,
         'primary_color_by_code': primary_color_by_code,
         'product_db_map': product_db_map,
         'product_map': product_map,
@@ -10473,6 +10487,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
     fabric_map = master_data['fabric_map']
     color_map = master_data['color_map']
     color_code_map = master_data['color_code_map']
+    color_codes_by_name = master_data.get('color_codes_by_name', {})
     product_db_map = master_data['product_db_map']
     product_map = master_data['product_map']
     product_rows = master_data['product_rows']
@@ -10545,7 +10560,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                     
             if not color_name:
                 errors.append("Color is required.")
-            elif color_name.lower() not in color_map and color_name.lower() not in color_code_map:
+            elif color_name.lower().strip() not in color_codes_by_name and color_name.lower() not in color_map and color_name.lower() not in color_code_map:
                 errors.append(f"Color '{color_name}' not found in Color Master. Suggested: Select an active Color Master value.")
                 
             if not weight_val:
@@ -10598,19 +10613,16 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                 except ValueError:
                     errors.append(f"Invalid numeric Qty '{qty_val}'.")
 
-            resolved_g_code = None
+            resolved_g_codes = []
             if color_name:
-                col_info = None
-                if color_name.lower() in color_map:
-                    col_info = color_map[color_name.lower()]
-                elif color_name.lower() in color_code_map:
-                    col_info = color_code_map[color_name.lower()]
+                resolved_g_codes = color_codes_by_name.get(color_name.lower().strip(), [])
+                if not resolved_g_codes:
+                    col_info = color_map.get(color_name.lower().strip()) or color_code_map.get(color_name.lower().strip())
+                    if col_info:
+                        resolved_g_codes = [col_info['code'].lower().strip()]
                 
-                if not col_info:
+                if not resolved_g_codes:
                     errors.append(f"Color '{color_name}' not found in Color Master. Suggested: Select a valid Color.")
-                else:
-                    g_code = col_info['code'].lower().strip()
-                    resolved_g_code = g_code
 
             wip_size_ids = size_ids_by_name.get(size_name.lower().strip(), [])
             if not wip_size_ids and size_name:
@@ -10628,7 +10640,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         for m in members:
                             m_id = m[1]
                             has_size = any((m_id, sid) in product_size_set for sid in wip_size_ids)
-                            has_color = (m_id, resolved_g_code) in product_color_set
+                            has_color = any((m_id, g_code) in product_color_set for g_code in resolved_g_codes)
                             if has_size and has_color:
                                 valid_member_found = True
                                 break
@@ -10642,7 +10654,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         else:
                             prod_id = p_info['id']
                             has_size = any((prod_id, sid) in product_size_set for sid in wip_size_ids)
-                            has_color = (prod_id, resolved_g_code) in product_color_set
+                            has_color = any((prod_id, g_code) in product_color_set for g_code in resolved_g_codes)
                             if not has_size:
                                 errors.append(f"Size '{size_name}' not mapped for Product '{product_name}'.")
                             elif not has_color:
@@ -10688,19 +10700,16 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                 except ValueError:
                     errors.append(f"Invalid numeric Qty '{qty_val}'.")
 
-            resolved_g_code = None
+            resolved_g_codes = []
             if color_name:
-                col_info = None
-                if color_name.lower() in color_map:
-                    col_info = color_map[color_name.lower()]
-                elif color_name.lower() in color_code_map:
-                    col_info = color_code_map[color_name.lower()]
+                resolved_g_codes = color_codes_by_name.get(color_name.lower().strip(), [])
+                if not resolved_g_codes:
+                    col_info = color_map.get(color_name.lower().strip()) or color_code_map.get(color_name.lower().strip())
+                    if col_info:
+                        resolved_g_codes = [col_info['code'].lower().strip()]
                 
-                if not col_info:
+                if not resolved_g_codes:
                     errors.append(f"Color '{color_name}' not found in Color Master. Suggested: Select a valid Color.")
-                else:
-                    g_code = col_info['code'].lower().strip()
-                    resolved_g_code = g_code
 
             order_size_ids = size_ids_by_name.get(size_name.lower().strip(), [])
             if not order_size_ids and size_name:
@@ -10718,7 +10727,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                         for m in members:
                             m_id = m[1]
                             has_size = any((m_id, sid) in product_size_set for sid in order_size_ids)
-                            has_color = (m_id, resolved_g_code) in product_color_set
+                            has_color = any((m_id, g_code) in product_color_set for g_code in resolved_g_codes)
                             if has_size and has_color:
                                 valid_member_found = True
                                 break
@@ -10728,7 +10737,7 @@ def validate_stock_wip_rows_internal(cur, tab_slug, rows, master_data=None):
                     p_info = product_db_map[prod_name_lower]
                     prod_id = p_info['id']
                     has_size = any((prod_id, sid) in product_size_set for sid in order_size_ids)
-                    has_color = (prod_id, resolved_g_code) in product_color_set
+                    has_color = any((prod_id, g_code) in product_color_set for g_code in resolved_g_codes)
                     if not has_color:
                         errors.append(f"Color '{color_name}' not mapped for Product '{product_name}'.")
                     elif not has_size:
