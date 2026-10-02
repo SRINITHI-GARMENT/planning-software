@@ -11741,18 +11741,28 @@ def resolve_fabric_lead_days(fabric_id):
     return config.get("fabric", {}).get(str(fabric_id))
 
 def resolve_production_lead_days(product_id, cur):
-    """Concept helper for future Base Stock module (Read-only from DB + JSON)"""
+    """Concept helper for Base Stock module (Read-only from DB + JSON)"""
     if product_id is None:
         return None
     config = load_lead_days_config()
-    cur.execute("SELECT common_production_id FROM product_master WHERE id = %s;", (int(product_id),))
+    cur.execute("SELECT common_production_id, product_name FROM product_master WHERE id = %s;", (int(product_id),))
     row = cur.fetchone()
     if row and row[0]:
         cp_id = str(row[0])
-        return config.get("production", {}).get("common_production", {}).get(cp_id)
+        val = config.get("production", {}).get("common_production", {}).get(cp_id)
+        if val is None:
+            cur.execute("SELECT common_production_name FROM common_production_master WHERE id = %s;", (int(cp_id),))
+            cp_r = cur.fetchone()
+            if cp_r and cp_r[0]:
+                val = config.get("production", {}).get("common_production", {}).get(cp_r[0]) or config.get("production", {}).get("common_production", {}).get(cp_r[0].strip())
+        return val
     else:
         p_id = str(product_id)
-        return config.get("production", {}).get("standalone", {}).get(p_id)
+        val = config.get("production", {}).get("standalone", {}).get(p_id)
+        if val is None and row and row[1]:
+            p_name = row[1]
+            val = config.get("production", {}).get("standalone", {}).get(p_name) or config.get("production", {}).get("standalone", {}).get(p_name.strip())
+        return val
 
 @app.route('/api/masters/lead-days/fabric', methods=['GET'])
 @login_required
@@ -11875,6 +11885,8 @@ def api_get_production_lead_days():
             desc_code = r[7] or ''
             code = brand_code or desc_code or f"P{p_id}"
             lead_days = sa_config.get(str(p_id))
+            if lead_days is None and p_name:
+                lead_days = sa_config.get(p_name) or sa_config.get(p_name.strip())
 
             standalone_list.append({
                 'type': 'Stand Alone',
@@ -11892,6 +11904,8 @@ def api_get_production_lead_days():
             member_count = r[2] or 0
             members = r[3] or []
             lead_days = cp_config.get(str(cp_id))
+            if lead_days is None and cp_name:
+                lead_days = cp_config.get(cp_name) or cp_config.get(cp_name.strip())
 
             common_list.append({
                 'type': 'Common Production',
@@ -11919,6 +11933,7 @@ def api_save_production_lead_days():
     payload = request.json or {}
     item_type = payload.get('type') # 'standalone' or 'common_production'
     item_id = payload.get('id')
+    item_name = payload.get('name')
     lead_days = payload.get('lead_days')
 
     if not item_type or item_id is None:
@@ -11938,18 +11953,395 @@ def api_save_production_lead_days():
 
     config = load_lead_days_config()
     str_id = str(item_id)
+    name_key = item_name.strip() if item_name else None
+
+    # If name was not passed in payload, resolve it from DB to ensure synchronization
+    if not name_key:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            if item_type == 'standalone':
+                if str_id.isdigit():
+                    cur.execute("SELECT product_name FROM product_master WHERE id = %s;", (int(str_id),))
+                    r = cur.fetchone()
+                    if r and r[0]:
+                        name_key = r[0].strip()
+                else:
+                    name_key = str_id
+            else:
+                if str_id.isdigit():
+                    cur.execute("SELECT common_production_name FROM common_production_master WHERE id = %s;", (int(str_id),))
+                    r = cur.fetchone()
+                    if r and r[0]:
+                        name_key = r[0].strip()
+                else:
+                    name_key = str_id
+        except Exception:
+            pass
+        finally:
+            release_db_connection(conn)
+
     if lead_days is None:
         config["production"][item_type].pop(str_id, None)
+        if name_key:
+            config["production"][item_type].pop(name_key, None)
     else:
         config["production"][item_type][str_id] = lead_days
+        if name_key:
+            config["production"][item_type][name_key] = lead_days
 
     save_lead_days_config(config)
     return jsonify({'success': True, 'message': 'Production Lead Days saved successfully.', 'type': item_type, 'id': item_id, 'lead_days': lead_days})
 
+# =====================================================================
+# BASE STOCK PLANNING MODULE (STANDALONE & INDEPENDENT ENDPOINTS)
+# =====================================================================
+
+@app.route('/api/base-stock/meta', methods=['GET'])
+@login_required
+def api_base_stock_meta():
+    return get_balance_qty_meta()
+
+def get_base_stock_dynamic_data():
+    plan_name = request.args.get('plan_name', '').strip()
+    financial_year = request.args.get('financial_year', '').strip()
+    version = request.args.get('version', '').strip()
+    brand = request.args.get('brand', '').strip()
+    category = request.args.get('category', '').strip()
+    product = request.args.get('product', '').strip()
+    search = request.args.get('search', '').strip()
+    recalculate = request.args.get('recalculate', 'false').lower() == 'true'
+    
+    consider_fg = parse_bool_query_param(request.args.get('consider_fg'), True)
+    consider_wip = parse_bool_query_param(request.args.get('consider_wip'), True)
+    consider_pending = parse_bool_query_param(request.args.get('consider_pending'), True)
+
+    tab = request.args.get('tab', 'standalone').strip().lower()
+    base_mode = request.args.get('base_mode', 'fabric').strip().lower()
+    if base_mode not in ('fabric', 'fg'):
+        base_mode = 'fabric'
+    all_records = request.args.get('all', 'false').lower() == 'true'
+    
+    if not plan_name or not financial_year or not version:
+        return jsonify({'success': True, 'rows': [], 'total_count': 0})
+
+    try:
+        page = int(request.args.get('page', 1))
+        if page < 1: page = 1
+    except:
+        page = 1
+        
+    try:
+        per_page = int(request.args.get('per_page', 50))
+        if per_page < 1: per_page = 50
+    except:
+        per_page = 50
+        
+    offset = (page - 1) * per_page
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        today = date.today()
+        range_to_items = {}
+
+        if base_mode == 'fg':
+            config = load_lead_days_config()
+            if tab == 'common':
+                # Production Lead Days resolved at the EXISTING COMMON PRODUCTION GROUP LEVEL
+                cur.execute("""
+                    SELECT id, common_production_name 
+                    FROM common_production_master 
+                    WHERE status = 'Active';
+                """)
+                cp_rows = cur.fetchall()
+                cp_config = config.get("production", {}).get("common_production", {})
+                for cp_id, cp_name in cp_rows:
+                    ld = cp_config.get(str(cp_id))
+                    if ld is None and cp_name:
+                        ld = cp_config.get(cp_name) or cp_config.get(cp_name.strip())
+                    ld = ld or 0
+                    cp_from = today
+                    cp_to = today + timedelta(days=int(ld))
+                    range_to_items.setdefault((cp_from, cp_to), []).append(cp_name)
+            else:
+                # Stand Alone Products: resolved by Product ID / Product Name
+                cur.execute("""
+                    SELECT id, product_name 
+                    FROM product_master 
+                    WHERE status = 'Active' AND (common_production_id IS NULL OR common_production_id = 0);
+                """)
+                sa_rows = cur.fetchall()
+                sa_config = config.get("production", {}).get("standalone", {})
+                for p_id, p_name in sa_rows:
+                    ld = sa_config.get(str(p_id))
+                    if ld is None and p_name:
+                        ld = sa_config.get(p_name) or sa_config.get(p_name.strip())
+                    ld = ld or 0
+                    p_from = today
+                    p_to = today + timedelta(days=int(ld))
+                    range_to_items.setdefault((p_from, p_to), []).append(p_name)
+        else:
+            # base_mode == 'fabric': exact existing Fabric Lead Days logic
+            cur.execute("""
+                SELECT DISTINCT p.fabric_id, f.fabric_name 
+                FROM product_master p
+                JOIN fabric_master f ON p.fabric_id = f.id
+                WHERE p.status = 'Active';
+            """)
+            fab_rows = cur.fetchall()
+            for f_id, f_name in fab_rows:
+                ld = resolve_fabric_lead_days(f_id) or 0
+                f_from = today
+                f_to = today + timedelta(days=int(ld))
+                range_to_items.setdefault((f_from, f_to), []).append(f_name)
+
+        # 2. Check cache / execute existing calculate_balance_qty for any missing date range
+        for (d_from, d_to) in range_to_items.keys():
+            d_from_str = d_from.strftime('%Y-%m-%d')
+            d_to_str = d_to.strftime('%Y-%m-%d')
+            cur.execute("""
+                SELECT COUNT(*) FROM balance_qty_cache 
+                WHERE plan_name = %s AND financial_year = %s AND version = %s
+                  AND from_date = %s AND to_date = %s;
+            """, (plan_name, financial_year, version, d_from, d_to))
+            cache_count = cur.fetchone()[0]
+
+            if cache_count == 0 or recalculate:
+                calculate_balance_qty(cur, plan_name, financial_year, version, d_from_str, d_to_str)
+                conn.commit()
+
+        # 3. Build query matching items to their specific date range
+        where_clauses = [
+            "p.plan_name = %s",
+            "p.financial_year = %s",
+            "p.version = %s"
+        ]
+        params = [plan_name, financial_year, version]
+
+        date_conditions = []
+        if base_mode == 'fg':
+            if tab == 'common':
+                for (d_from, d_to), group_names in range_to_items.items():
+                    date_conditions.append("(p.common_production_name = ANY(%s) AND p.from_date = %s AND p.to_date = %s)")
+                    params.extend([group_names, d_from, d_to])
+            else:
+                for (d_from, d_to), prod_names in range_to_items.items():
+                    date_conditions.append("(p.product = ANY(%s) AND p.from_date = %s AND p.to_date = %s)")
+                    params.extend([prod_names, d_from, d_to])
+        else:
+            for (f_from, f_to), fabs in range_to_items.items():
+                date_conditions.append("(p.fabric_name = ANY(%s) AND p.from_date = %s AND p.to_date = %s)")
+                params.extend([fabs, f_from, f_to])
+
+        if date_conditions:
+            where_clauses.append("(" + " OR ".join(date_conditions) + ")")
+
+        if tab == 'common':
+            where_clauses.append("p.common_production_name IS NOT NULL AND p.common_production_name <> ''")
+            where_clauses.append("p.color <> 'All Colors'")
+            where_clauses.append("p.production_type IN ('Common Member', 'Common Parent WIP')")
+        else:
+            where_clauses.append("(p.common_production_name IS NULL OR p.common_production_name = '')")
+
+        if brand:
+            where_clauses.append("p.brand = %s")
+            params.append(brand)
+        if category:
+            where_clauses.append("p.category = %s")
+            params.append(category)
+        if product:
+            if tab == 'common':
+                where_clauses.append("p.common_production_name = %s")
+            else:
+                where_clauses.append("p.product = %s")
+            params.append(product)
+
+        if search:
+            search_pattern = f"%{search}%"
+            if tab == 'common':
+                where_clauses.append("(p.common_production_name ILIKE %s OR p.color ILIKE %s OR p.size ILIKE %s OR p.brand ILIKE %s)")
+                params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+            else:
+                where_clauses.append("(p.product ILIKE %s OR p.color ILIKE %s OR p.size ILIKE %s OR p.brand ILIKE %s)")
+                params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+
+        where_str = " AND ".join(where_clauses)
+
+        if tab == 'common':
+            cur.execute(f"""
+                WITH color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                        LOWER(TRIM(display_color)) AS color_key,
+                        global_color_code
+                    FROM color_master
+                    ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                ),
+                primary_color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                        LOWER(TRIM(global_color_code)) AS code_key,
+                        display_color AS primary_display_color
+                    FROM color_master
+                    WHERE category = 'Primary'
+                    ORDER BY LOWER(TRIM(global_color_code)), id ASC
+                )
+                SELECT COUNT(*) FROM (
+                    SELECT 1 
+                    FROM balance_qty_cache p 
+                    LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+                    LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
+                    WHERE {where_str}
+                    GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
+                ) as sub;
+            """, tuple(params))
+        else:
+            cur.execute(f"SELECT COUNT(*) FROM balance_qty_cache p WHERE {where_str};", tuple(params))
+        total_count = cur.fetchone()[0]
+
+        if tab == 'common':
+            fg_sum_expr = "SUM(p.finished_goods_qty)" if consider_fg else "0.0"
+            wip_sum_expr = "SUM(p.production_wip_qty)" if consider_wip else "0.0"
+            pending_sum_expr = "SUM(p.pending_production_qty)" if consider_pending else "0.0"
+
+            query_str = f"""
+                WITH color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(display_color)))
+                        LOWER(TRIM(display_color)) AS color_key,
+                        global_color_code
+                    FROM color_master
+                    ORDER BY LOWER(TRIM(display_color)), (category = 'Primary') DESC, id ASC
+                ),
+                primary_color_map AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(global_color_code)))
+                        LOWER(TRIM(global_color_code)) AS code_key,
+                        display_color AS primary_display_color
+                    FROM color_master
+                    WHERE category = 'Primary'
+                    ORDER BY LOWER(TRIM(global_color_code)), id ASC
+                )
+                SELECT 
+                    MIN(p.id) as id,
+                    p.from_date,
+                    p.to_date,
+                    MIN(p.brand) as brand,
+                    MIN(p.category) as category,
+                    p.common_production_name as product,
+                    COALESCE(MAX(pcm.primary_display_color), MAX(cm.global_color_code), MIN(p.color)) as color,
+                    p.size,
+                    SUM(p.calculated_qty) as calculated_qty,
+                    SUM(p.finished_goods_qty) as finished_goods_qty,
+                    SUM(p.production_wip_qty) as production_wip_qty,
+                    SUM(p.pending_production_qty) as pending_production_qty,
+                    GREATEST(0.0, SUM(p.calculated_qty) - {fg_sum_expr} - {wip_sum_expr} + {pending_sum_expr}) as bal_required_qty,
+                    'Common' as production_type,
+                    p.common_production_name,
+                    MIN(p.fabric_name) as fabric_name,
+                    COALESCE(MAX(cm.global_color_code), MIN(p.color)) as global_color_code
+                FROM balance_qty_cache p
+                LEFT JOIN color_map cm ON LOWER(TRIM(p.color)) = cm.color_key
+                LEFT JOIN primary_color_map pcm ON LOWER(TRIM(COALESCE(cm.global_color_code, p.color))) = pcm.code_key
+                WHERE {where_str}
+                GROUP BY p.from_date, p.to_date, p.common_production_name, LOWER(TRIM(COALESCE(pcm.primary_display_color, cm.global_color_code, p.color))), p.size
+                ORDER BY p.common_production_name ASC, p.size ASC, color ASC
+            """
+            if not all_records:
+                query_str += " LIMIT %s OFFSET %s;"
+                cur.execute(query_str, tuple(params + [per_page, offset]))
+            else:
+                query_str += ";"
+                cur.execute(query_str, tuple(params))
+        else:
+            fg_expr = "p.finished_goods_qty" if consider_fg else "0.0"
+            wip_expr = "p.production_wip_qty" if consider_wip else "0.0"
+            pending_expr = "p.pending_production_qty" if consider_pending else "0.0"
+
+            query_str = f"""
+                SELECT id, from_date, to_date, brand, category, product, color, size,
+                       calculated_qty, finished_goods_qty, production_wip_qty, pending_production_qty,
+                       GREATEST(0.0, p.calculated_qty - {fg_expr} - {wip_expr} + {pending_expr}) as bal_required_qty,
+                       production_type, common_production_name, fabric_name
+                FROM balance_qty_cache p
+                WHERE {where_str}
+                ORDER BY p.product ASC, p.size ASC
+            """
+            if not all_records:
+                query_str += " LIMIT %s OFFSET %s;"
+                cur.execute(query_str, tuple(params + [per_page, offset]))
+            else:
+                query_str += ";"
+                cur.execute(query_str, tuple(params))
+
+        rows = cur.fetchall()
+
+        serialized_rows = []
+        cols = [
+            'id', 'from_date', 'to_date', 'brand', 'category', 'product', 'color', 'size',
+            'calculated_qty', 'finished_goods_qty', 'production_wip_qty', 'pending_production_qty', 'bal_required_qty',
+            'production_type', 'common_production_name', 'fabric_name'
+        ]
+        if tab == 'common':
+            cols.append('global_color_code')
+
+        from decimal import Decimal
+        for r in rows:
+            serialized = {}
+            for col, val in zip(cols, r):
+                if isinstance(val, Decimal):
+                    serialized[col] = float(val)
+                elif isinstance(val, (date, datetime)):
+                    serialized[col] = val.strftime('%Y-%m-%d')
+                else:
+                    serialized[col] = val
+            serialized_rows.append(serialized)
+
+        response = jsonify({
+            'success': True,
+            'rows': serialized_rows,
+            'total_count': total_count
+        })
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    except Exception as e:
+        logger.error(f"Error loading dynamic base stock data: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Error loading base stock data: {str(e)}'}), 500
+    finally:
+        cur.close()
+        release_db_connection(conn)
+
+@app.route('/api/base-stock/data', methods=['GET'])
+@login_required
+def api_base_stock_data():
+    from_date_str = request.args.get('from_date', '').strip()
+    to_date_str = request.args.get('to_date', '').strip()
+    if from_date_str and to_date_str:
+        return get_balance_qty_data()
+    return get_base_stock_dynamic_data()
+
+@app.route('/api/base-stock/members', methods=['GET'])
+@login_required
+def api_base_stock_members():
+    return get_balance_qty_members()
+
+@app.route('/api/base-stock/fabric-req/data', methods=['GET'])
+@login_required
+def api_base_stock_fabric_req_data():
+    return get_fabric_req_data()
+
+@app.route('/api/base-stock/fabric-req/details', methods=['GET'])
+@login_required
+def api_base_stock_fabric_req_details():
+    return get_fabric_req_details()
+
 # Route to serve the main HTML index page
 @app.route('/')
 def index():
-    return send_from_directory(app.static_folder, 'index.html')
+    resp = send_from_directory(app.static_folder, 'index.html')
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 @app.route('/fabric-requirement-detail')
 def fabric_requirement_detail():

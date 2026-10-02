@@ -988,6 +988,7 @@ function switchTab(tabId) {
     const tabCommonProductionMaster = document.getElementById('tab-common-production-master');
     const tabStockWip = document.getElementById('tab-stock-wip');
     const tabBalanceQty = document.getElementById('tab-balance-qty');
+    const tabBaseStock = document.getElementById('tab-base-stock');
     const tabPendingQtyPlanning = document.getElementById('tab-pending-qty-planning');
     const tabLeadDaysMaster = document.getElementById('tab-lead-days-master');
 
@@ -1005,6 +1006,7 @@ function switchTab(tabId) {
     const panelCommonProductionMaster = document.getElementById('common-production-master-panel');
     const panelStockWip = document.getElementById('stock-wip-panel');
     const panelBalanceQty = document.getElementById('balance-qty-panel');
+    const panelBaseStock = document.getElementById('base-stock-panel');
     const panelPendingQtyPlanning = document.getElementById('pending-qty-planning-panel');
     const panelLeadDaysMaster = document.getElementById('lead-days-master-panel');
 
@@ -1023,6 +1025,7 @@ function switchTab(tabId) {
     if (tabCommonProductionMaster) tabCommonProductionMaster.classList.remove('active');
     if (tabStockWip) tabStockWip.classList.remove('active');
     if (tabBalanceQty) tabBalanceQty.classList.remove('active');
+    if (tabBaseStock) tabBaseStock.classList.remove('active');
     if (tabPendingQtyPlanning) tabPendingQtyPlanning.classList.remove('active');
     if (tabLeadDaysMaster) tabLeadDaysMaster.classList.remove('active');
 
@@ -1040,6 +1043,7 @@ function switchTab(tabId) {
     if (panelCommonProductionMaster) panelCommonProductionMaster.classList.add('hidden');
     if (panelStockWip) panelStockWip.classList.add('hidden');
     if (panelBalanceQty) panelBalanceQty.classList.add('hidden');
+    if (panelBaseStock) panelBaseStock.classList.add('hidden');
     if (panelPendingQtyPlanning) panelPendingQtyPlanning.classList.add('hidden');
     if (panelLeadDaysMaster) panelLeadDaysMaster.classList.add('hidden');
 
@@ -1102,6 +1106,10 @@ function switchTab(tabId) {
         if (tabBalanceQty) tabBalanceQty.classList.add('active');
         if (panelBalanceQty) panelBalanceQty.classList.remove('hidden');
         initializeBalanceQtyTab();
+    } else if (tabId === 'base-stock') {
+        if (tabBaseStock) tabBaseStock.classList.add('active');
+        if (panelBaseStock) panelBaseStock.classList.remove('hidden');
+        initializeBaseStockTab();
     } else if (tabId === 'lead-days-master') {
         if (tabLeadDaysMaster) tabLeadDaysMaster.classList.add('active');
         if (panelLeadDaysMaster) panelLeadDaysMaster.classList.remove('hidden');
@@ -20368,7 +20376,7 @@ function renderExcelPlanningTab() {
             const pName = r.product_name ? String(r.product_name).trim() : '';
             const cName = r.common_production_name ? String(r.common_production_name).trim() : '';
             const matches = (pName && excelPlanningState.selectedSCodes.has(pName)) ||
-                            (cName && excelPlanningState.selectedSCodes.has(cName));
+                (cName && excelPlanningState.selectedSCodes.has(cName));
             if (!matches) return false;
         }
         return true;
@@ -20484,14 +20492,14 @@ function renderExcelPlanningTab() {
                     <tr class="excel-row">
                         <td class="excel-col-frozen">${escapeHtml(row.label)}</td>
                         ${sizeCols.map(s => {
-                            const v = row.sizes[s] || 0;
-                            return v > 0 
-                                ? `<td class="excel-cell-nonzero">${Math.round(v).toLocaleString()}</td>`
-                                : `<td class="excel-cell-zero">0</td>`;
-                        }).join('')}
-                        ${row.total > 0 
-                            ? `<td class="excel-cell-total-nonzero">${Math.round(row.total).toLocaleString()}</td>` 
-                            : `<td class="excel-cell-total-zero">0</td>`}
+                    const v = row.sizes[s] || 0;
+                    return v > 0
+                        ? `<td class="excel-cell-nonzero">${Math.round(v).toLocaleString()}</td>`
+                        : `<td class="excel-cell-zero">0</td>`;
+                }).join('')}
+                        ${row.total > 0
+                        ? `<td class="excel-cell-total-nonzero">${Math.round(row.total).toLocaleString()}</td>`
+                        : `<td class="excel-cell-total-zero">0</td>`}
                     </tr>
                 `;
             });
@@ -20500,14 +20508,14 @@ function renderExcelPlanningTab() {
                 <tr class="excel-subtotal-row">
                     <td class="excel-col-frozen">Sub Total (${escapeHtml(grp.groupKey)})</td>
                     ${sizeCols.map(s => {
-                        const sv = grp.subtotals[s] || 0;
-                        return sv > 0 
-                            ? `<td class="excel-cell-nonzero">${Math.round(sv).toLocaleString()}</td>` 
-                            : `<td class="excel-cell-zero">0</td>`;
-                    }).join('')}
-                    ${grp.total > 0 
-                        ? `<td class="excel-cell-total-nonzero">${Math.round(grp.total).toLocaleString()}</td>` 
-                        : `<td class="excel-cell-total-zero">0</td>`}
+                const sv = grp.subtotals[s] || 0;
+                return sv > 0
+                    ? `<td class="excel-cell-nonzero">${Math.round(sv).toLocaleString()}</td>`
+                    : `<td class="excel-cell-zero">0</td>`;
+            }).join('')}
+                    ${grp.total > 0
+                    ? `<td class="excel-cell-total-nonzero">${Math.round(grp.total).toLocaleString()}</td>`
+                    : `<td class="excel-cell-total-zero">0</td>`}
                 </tr>
             `;
         }
@@ -20519,14 +20527,14 @@ function renderExcelPlanningTab() {
                 <tr class="excel-grand-total-row">
                     <td class="excel-col-frozen">GRAND TOTAL</td>
                     ${sizeCols.map(s => {
-                        const gv = grandSizeTotals[s] || 0;
-                        return gv > 0 
-                            ? `<td class="excel-cell-nonzero">${Math.round(gv).toLocaleString()}</td>` 
-                            : `<td class="excel-cell-zero">0</td>`;
-                    }).join('')}
-                    ${overallGrandTotal > 0 
-                        ? `<td class="excel-cell-total-nonzero" style="font-size: 13.5px;">${Math.round(overallGrandTotal).toLocaleString()}</td>` 
-                        : `<td class="excel-cell-total-zero">0</td>`}
+        const gv = grandSizeTotals[s] || 0;
+        return gv > 0
+            ? `<td class="excel-cell-nonzero">${Math.round(gv).toLocaleString()}</td>`
+            : `<td class="excel-cell-zero">0</td>`;
+    }).join('')}
+                    ${overallGrandTotal > 0
+            ? `<td class="excel-cell-total-nonzero" style="font-size: 13.5px;">${Math.round(overallGrandTotal).toLocaleString()}</td>`
+            : `<td class="excel-cell-total-zero">0</td>`}
                 </tr>
             </tfoot>
         </table>
@@ -20746,4 +20754,2167 @@ function exportExcelPlanningMatrix() {
     XLSX.writeFile(wb, filename);
 }
 
+// =====================================================================
+
+// =====================================================================
+// BASE STOCK PLANNING MODULE CLIENT HANDLERS (STANDALONE & INDEPENDENT)
+// =====================================================================
+
+let baseStockMetadata = null;
+let baseStockMainTab = 'fabric';
+let baseStockCurrentPage = 1;
+let baseStockActiveTab = 'standalone';
+let expandedBaseStockCommonRows = {};
+let baseStockColumnFilters = {};
+let baseStockAllData = [];
+let baseStockFilteredData = [];
+let baseStockStandaloneData = [];
+let baseStockCommonData = [];
+let fgTableProductionTypeFilter = 'ALL';
+let baseStockFabricAllData = [];
+let baseStockFabricFilteredData = [];
+let baseStockFabricTotals = { fabric_req: 0, fabric_stock: 0, fabric_wip: 0, bal_required_fab: 0 };
+let baseStockConsider = { fg: true, wip: true, pending: true };
+let currentBaseStockFilterColumn = null;
+
+function decorateFgRowsWithExcess(rows) {
+    (rows || []).forEach(r => {
+        const base = Number(r.calculated_qty) || 0;
+        const fg = Number(r.finished_goods_qty) || 0;
+        const wip = Number(r.production_wip_qty) || 0;
+        const pend = Number(r.pending_production_qty) || 0;
+        r.excess_qty = Math.max(0, fg + wip - base - pend);
+    });
+    return rows;
+}
+
+function getFgBaseStockColumns() {
+    const productTitle = (baseStockActiveTab === 'common') ? 'Product / Common Group' : 'Product';
+    return [
+        { key: 'details', title: 'Details', align: 'center', width: '50px', filterable: false },
+        { key: 'period', title: 'Period', align: 'left', filterable: true },
+        { key: 'brand', title: 'Brand', align: 'left', filterable: true },
+        { key: 'category', title: 'Category', align: 'left', filterable: true },
+        { key: 'product', title: productTitle, align: 'left', filterable: true },
+        { key: 'fabric_name', title: 'Fabric Name', align: 'left', filterable: true },
+        { key: 'color', title: 'Color', align: 'left', filterable: true },
+        { key: 'size', title: 'Size', align: 'left', filterable: true },
+        { key: 'calculated_qty', title: 'Base Stock', align: 'right', filterable: true, isNumeric: true },
+        { key: 'finished_goods_qty', title: 'FG Stock', align: 'right', filterable: true, isNumeric: true },
+        { key: 'production_wip_qty', title: 'WIP Qty', align: 'right', filterable: true, isNumeric: true },
+        { key: 'pending_production_qty', title: 'Pending O.Qty', align: 'right', filterable: true, isNumeric: true },
+        { key: 'excess_qty', title: 'Excess Qty', align: 'right', filterable: true, isNumeric: true, customStyle: 'background: rgba(16, 185, 129, 0.1); color: var(--accent-green); font-weight: 700;' },
+        { key: 'bal_required_qty', title: 'Need To Cut Qty', align: 'right', filterable: true, isNumeric: true, customStyle: 'background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); font-weight: 700;' },
+        { key: 'production_type', title: 'Path Type', align: 'center', width: '120px', filterable: true }
+    ];
+}
+
+function onFgTableProductionTypeChange() {
+    const select = document.getElementById('fg-table-view-prod-type-select');
+    if (select) {
+        fgTableProductionTypeFilter = select.value || 'ALL';
+    }
+    renderBaseStockTableView();
+}
+
+function getFgTableActivePool() {
+    if (fgTableProductionTypeFilter === 'STAND ALONE') {
+        return baseStockStandaloneData || [];
+    } else if (fgTableProductionTypeFilter === 'COMMON') {
+        return baseStockCommonData || [];
+    }
+    return [...(baseStockStandaloneData || []), ...(baseStockCommonData || [])];
+}
+
+function toggleBaseStockConsiderDropdown(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('base-stock-consider-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('hidden');
+    }
+}
+
+function onBaseStockConsiderChange() {
+    const fgCheck = document.getElementById('base-consider-fg-stock');
+    const wipCheck = document.getElementById('base-consider-wip-qty');
+    const pendingCheck = document.getElementById('base-consider-pending-qty');
+
+    baseStockConsider.fg = fgCheck ? fgCheck.checked : true;
+    baseStockConsider.wip = wipCheck ? wipCheck.checked : true;
+    baseStockConsider.pending = pendingCheck ? pendingCheck.checked : true;
+
+    updateBaseStockConsiderSummary();
+    loadBaseStockData(1);
+}
+
+function updateBaseStockConsiderSummary() {
+    const summaryEl = document.getElementById('base-stock-consider-summary');
+    if (!summaryEl) return;
+
+    const selected = [];
+    if (baseStockConsider.fg) selected.push('FG');
+    if (baseStockConsider.wip) selected.push('WIP');
+    if (baseStockConsider.pending) selected.push('Pending');
+
+    if (selected.length === 3) {
+        summaryEl.textContent = 'All Selected (3)';
+    } else if (selected.length === 0) {
+        summaryEl.textContent = 'None Selected (0)';
+    } else {
+        summaryEl.textContent = selected.join(', ');
+    }
+}
+
+function getBaseStockConsiderParams() {
+    return `&consider_fg=${baseStockConsider.fg}&consider_wip=${baseStockConsider.wip}&consider_pending=${baseStockConsider.pending}`;
+}
+
+// Close base stock consider dropdown when clicking outside
+document.addEventListener('click', function (e) {
+    const dropdown = document.getElementById('base-stock-consider-dropdown');
+    const btn = document.getElementById('base-stock-consider-btn');
+    if (dropdown && !dropdown.classList.contains('hidden')) {
+        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
+
+async function initializeBaseStockTab() {
+    const planSelect = document.getElementById('base-stock-plan-select');
+    const versionSelect = document.getElementById('base-stock-version-select');
+
+    if (planSelect) planSelect.innerHTML = '<option value="">Loading Plans...</option>';
+    if (versionSelect) versionSelect.innerHTML = '<option value="">Loading Versions...</option>';
+
+    // Initialize date inputs if empty
+    const fromDateInput = document.getElementById('base-stock-from-date');
+    const toDateInput = document.getElementById('base-stock-to-date');
+    if (fromDateInput && !fromDateInput.value) {
+        const today = new Date();
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+        const formatDate = (d) => {
+            const month = '' + (d.getMonth() + 1);
+            const day = '' + d.getDate();
+            const year = d.getFullYear();
+            return [year, month.padStart(2, '0'), day.padStart(2, '0')].join('-');
+        };
+        fromDateInput.value = formatDate(firstDay);
+        toDateInput.value = formatDate(lastDay);
+    }
+
+    try {
+        const response = await fetch('/api/base-stock/meta');
+        const data = await response.json();
+
+        if (!data.success) {
+            showToast('Error', data.message || 'Failed to load metadata', 'error');
+            return;
+        }
+
+        baseStockMetadata = data.plans || [];
+
+        if (baseStockMetadata.length === 0) {
+            if (planSelect) planSelect.innerHTML = '<option value="">No Plans Found</option>';
+            if (versionSelect) versionSelect.innerHTML = '<option value="">No Versions Found</option>';
+            return;
+        }
+
+        if (planSelect) {
+            planSelect.innerHTML = '';
+            baseStockMetadata.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = `${p.plan_name}|${p.financial_year}`;
+                opt.textContent = `${p.plan_name} (${p.financial_year})`;
+                planSelect.appendChild(opt);
+            });
+        }
+
+        onBaseStockPlanChange();
+    } catch (err) {
+        showToast('Error', 'Failed to connect to API', 'error');
+        console.error(err);
+    }
+}
+
+function switchBaseStockMainTab(mainTab) {
+    if (mainTab !== 'fabric' && mainTab !== 'fg') {
+        mainTab = 'fabric';
+    }
+    baseStockMainTab = mainTab;
+
+    const fabricMainBtn = document.getElementById('base-stock-main-tab-fabric');
+    const fgMainBtn = document.getElementById('base-stock-main-tab-fg');
+    const fabricSubTabBtn = document.getElementById('base-stock-tab-fabric');
+    const tableViewSubTabBtn = document.getElementById('base-stock-tab-table-view');
+
+    if (fabricMainBtn) fabricMainBtn.classList.remove('active');
+    if (fgMainBtn) fgMainBtn.classList.remove('active');
+
+    if (mainTab === 'fg') {
+        if (fgMainBtn) fgMainBtn.classList.add('active');
+        if (fabricSubTabBtn) fabricSubTabBtn.style.display = 'none';
+        if (tableViewSubTabBtn) tableViewSubTabBtn.style.display = '';
+        if (baseStockActiveTab === 'fabric') {
+            switchBaseStockSubTab('standalone');
+            return;
+        }
+    } else {
+        if (fabricMainBtn) fabricMainBtn.classList.add('active');
+        if (fabricSubTabBtn) fabricSubTabBtn.style.display = '';
+        if (tableViewSubTabBtn) tableViewSubTabBtn.style.display = 'none';
+        const gridCard = document.getElementById('base-stock-grid-card');
+        const tableViewContainer = document.getElementById('base-stock-table-view-container');
+        if (gridCard) gridCard.classList.remove('hidden');
+        if (tableViewContainer) tableViewContainer.classList.add('hidden');
+        if (baseStockActiveTab === 'table_view') {
+            switchBaseStockSubTab('fabric');
+            return;
+        }
+    }
+
+    loadBaseStockData(1);
+}
+
+function switchBaseStockSubTab(tab) {
+    baseStockActiveTab = tab;
+    baseStockColumnFilters = {};
+
+    // Update active tab button classes
+    const standaloneBtn = document.getElementById('base-stock-tab-standalone');
+    const commonBtn = document.getElementById('base-stock-tab-common');
+    const fabricBtn = document.getElementById('base-stock-tab-fabric');
+    const tableViewBtn = document.getElementById('base-stock-tab-table-view');
+
+    if (standaloneBtn) standaloneBtn.classList.remove('active');
+    if (commonBtn) commonBtn.classList.remove('active');
+    if (fabricBtn) fabricBtn.classList.remove('active');
+    if (tableViewBtn) tableViewBtn.classList.remove('active');
+
+    const gridCard = document.getElementById('base-stock-grid-card');
+    const tableViewContainer = document.getElementById('base-stock-table-view-container');
+
+    if (tab === 'table_view') {
+        if (tableViewBtn) tableViewBtn.classList.add('active');
+        if (gridCard) gridCard.classList.add('hidden');
+        if (tableViewContainer) tableViewContainer.classList.remove('hidden');
+
+        // Always reset Production Type filter to 'ALL' upon entering Table View
+        fgTableProductionTypeFilter = 'ALL';
+        const prodTypeSelect = document.getElementById('fg-table-view-prod-type-select');
+        if (prodTypeSelect) prodTypeSelect.value = 'ALL';
+
+        // If both standalone and common datasets are already in memory, render immediately
+        if (baseStockStandaloneData && baseStockStandaloneData.length > 0 &&
+            baseStockCommonData && baseStockCommonData.length > 0) {
+            renderBaseStockTableView();
+            return;
+        }
+
+        // Otherwise load data
+        loadBaseStockData(1);
+        return;
+    } else {
+        if (gridCard) gridCard.classList.remove('hidden');
+        if (tableViewContainer) tableViewContainer.classList.add('hidden');
+
+        if (tab === 'common' && commonBtn) {
+            commonBtn.classList.add('active');
+        } else if (tab === 'fabric' && fabricBtn) {
+            fabricBtn.classList.add('active');
+        } else if (standaloneBtn) {
+            standaloneBtn.classList.add('active');
+        }
+    }
+
+    // Toggle date container visibility: shown only for Tab 3 (Fabric Req)
+    const dateContainer = document.getElementById('base-stock-date-container');
+    if (dateContainer) {
+        if (tab === 'fabric') {
+            dateContainer.classList.remove('hidden');
+        } else {
+            dateContainer.classList.add('hidden');
+        }
+    }
+
+    // FG-only caching: strictly only when baseStockMainTab === 'fg'
+    if (baseStockMainTab === 'fg') {
+        if (tab === 'standalone' && baseStockStandaloneData && baseStockStandaloneData.length > 0) {
+            baseStockAllData = baseStockStandaloneData;
+            processBaseStockFiltersAndRender();
+            return;
+        }
+
+        if (tab === 'common' && baseStockCommonData && baseStockCommonData.length > 0) {
+            baseStockAllData = baseStockCommonData;
+            processBaseStockFiltersAndRender();
+            return;
+        }
+    }
+
+    // Update filter placeholder and table header
+    const productFilterInput = document.getElementById('base-stock-product-filter');
+    const productFilterSelect = document.getElementById('base-stock-product-select-filter');
+    const productHeader = document.getElementById('base-stock-product-th');
+
+    if (tab === 'common') {
+        if (productFilterInput) {
+            productFilterInput.classList.add('hidden');
+            productFilterInput.value = '';
+        }
+        if (productFilterSelect) {
+            productFilterSelect.classList.remove('hidden');
+            fetchBaseStockCommonProductionsForFilter();
+        }
+    } else if (tab === 'fabric') {
+        if (productFilterInput) {
+            productFilterInput.classList.remove('hidden');
+            productFilterInput.value = '';
+            productFilterInput.placeholder = 'Filter Product/Common Group...';
+        }
+        if (productFilterSelect) {
+            productFilterSelect.classList.add('hidden');
+            productFilterSelect.value = '';
+        }
+    } else {
+        if (productFilterInput) {
+            productFilterInput.classList.remove('hidden');
+            productFilterInput.value = '';
+            productFilterInput.placeholder = 'Filter Product...';
+        }
+        if (productFilterSelect) {
+            productFilterSelect.classList.add('hidden');
+            productFilterSelect.value = '';
+        }
+    }
+
+    if (productHeader && tab !== 'fabric') {
+        if (tab === 'common') {
+            productHeader.textContent = 'Product / Common Group';
+        } else {
+            productHeader.textContent = 'Product';
+        }
+    }
+
+    // Reload data for page 1
+    loadBaseStockData(1);
+}
+
+async function fetchBaseStockCommonProductionsForFilter() {
+    try {
+        const response = await fetch('/api/masters/common-production?status=Active');
+        const data = await response.json();
+        if (response.ok && data.success) {
+            const select = document.getElementById('base-stock-product-select-filter');
+            if (select) {
+                const currentVal = select.value;
+                select.innerHTML = '<option value="">All Groups</option>';
+                data.common_productions.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.common_production_name;
+                    opt.innerText = item.common_production_name;
+                    select.appendChild(opt);
+                });
+                select.value = currentVal;
+            }
+        }
+    } catch (err) {
+        console.error("Error fetching common productions for Base Stock filter select:", err);
+    }
+}
+
+function onBaseStockPlanChange() {
+    baseStockStandaloneData = [];
+    baseStockCommonData = [];
+    const planSelect = document.getElementById('base-stock-plan-select');
+    const versionSelect = document.getElementById('base-stock-version-select');
+    if (!planSelect || !versionSelect) return;
+
+    const val = planSelect.value;
+    if (!val) {
+        versionSelect.innerHTML = '<option value="">Select Plan First</option>';
+        return;
+    }
+
+    const [plan_name, fy] = val.split('|');
+    const planMeta = (baseStockMetadata || []).find(p => p.plan_name === plan_name && p.financial_year === fy);
+
+    versionSelect.innerHTML = '';
+    if (planMeta && planMeta.versions) {
+        planMeta.versions.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            versionSelect.appendChild(opt);
+        });
+    }
+
+    loadBaseStockData(1);
+}
+
+async function loadBaseStockData(page = 1, forceRecalculate = false) {
+    const loader = document.getElementById('base-stock-loader');
+    if (loader) loader.classList.remove('hidden');
+
+    baseStockCurrentPage = 1;
+    baseStockColumnFilters = {};
+
+    const planSelect = document.getElementById('base-stock-plan-select');
+    if (!planSelect || !planSelect.value) {
+        if (loader) loader.classList.add('hidden');
+        return;
+    }
+
+    const [plan_name, financial_year] = planSelect.value.split('|');
+    const version = document.getElementById('base-stock-version-select')?.value || '';
+    const fromDate = document.getElementById('base-stock-from-date')?.value || '';
+    const toDate = document.getElementById('base-stock-to-date')?.value || '';
+    const brand = document.getElementById('base-stock-brand-filter')?.value || '';
+    const category = document.getElementById('base-stock-category-filter')?.value || '';
+    const product = baseStockActiveTab === 'common'
+        ? (document.getElementById('base-stock-product-select-filter')?.value || '')
+        : (document.getElementById('base-stock-product-filter')?.value || '');
+    const search = document.getElementById('base-stock-search')?.value || '';
+
+    const isFabric = baseStockActiveTab === 'fabric';
+
+    if (isFabric) {
+        if (!fromDate || !toDate) {
+            if (loader) loader.classList.add('hidden');
+            showToast('Warning', 'Both From Date and To Date are mandatory.', 'warning');
+            return;
+        }
+
+        if (new Date(fromDate) > new Date(toDate)) {
+            if (loader) loader.classList.add('hidden');
+            showToast('Warning', 'From Date cannot be greater than To Date.', 'warning');
+            return;
+        }
+    }
+
+    const endpoint = isFabric ? '/api/base-stock/fabric-req/data' : '/api/base-stock/data';
+    let url = `${endpoint}?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&all=true&consider_fg=${baseStockConsider.fg}&consider_wip=${baseStockConsider.wip}&consider_pending=${baseStockConsider.pending}&_=${Date.now()}`;
+
+    if (isFabric) {
+        url += `&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`;
+    } else {
+        const queryTab = baseStockActiveTab === 'table_view' ? 'standalone' : baseStockActiveTab;
+        url += `&tab=${queryTab}`;
+    }
+    url += `&base_mode=${encodeURIComponent(baseStockMainTab)}`;
+
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (product) url += `&product=${encodeURIComponent(product)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (forceRecalculate) url += `&recalculate=true`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (loader) loader.classList.add('hidden');
+
+        if (!data.success) {
+            showToast('Error', data.message || 'Failed to load Base Stock details', 'error');
+            return;
+        }
+
+        if (baseStockMainTab === 'fg') {
+            if (baseStockActiveTab === 'standalone') {
+                baseStockStandaloneData = decorateFgRowsWithExcess(data.rows || []);
+                baseStockAllData = baseStockStandaloneData;
+                processBaseStockFiltersAndRender();
+            } else if (baseStockActiveTab === 'common') {
+                baseStockCommonData = decorateFgRowsWithExcess(data.rows || []);
+                baseStockAllData = baseStockCommonData;
+                processBaseStockFiltersAndRender();
+            } else if (baseStockActiveTab === 'table_view') {
+                baseStockStandaloneData = decorateFgRowsWithExcess(data.rows || []);
+                if (!baseStockCommonData || baseStockCommonData.length === 0 || forceRecalculate) {
+                    const cpUrl = url.replace('&tab=standalone', '&tab=common');
+                    const cpRes = await fetch(cpUrl);
+                    const cpData = await cpRes.json();
+                    if (cpData && cpData.success) {
+                        baseStockCommonData = decorateFgRowsWithExcess(cpData.rows || []);
+                    }
+                }
+                renderBaseStockTableView();
+            }
+            return;
+        }
+
+        // ORIGINAL FABRIC BASE STOCK CODE PATH (100% UNCHANGED)
+        if (isFabric) {
+            baseStockFabricAllData = data.rows || [];
+            baseStockFabricTotals = data.totals || { fabric_req: 0, fabric_stock: 0, fabric_wip: 0, bal_required_fab: 0 };
+            processBaseStockFabricReqFiltersAndRender();
+        } else {
+            baseStockAllData = data.rows || [];
+            processBaseStockFiltersAndRender();
+        }
+    } catch (err) {
+        if (loader) loader.classList.add('hidden');
+        showToast('Error', 'Connection error loading Base Stock data', 'error');
+        console.error(err);
+    }
+}
+
+function getBaseStockFabricDetailUrl(fabricName) {
+    const planVal = document.getElementById('base-stock-plan-select')?.value || '';
+    const [plan_name, financial_year] = planVal.split('|');
+    const version = document.getElementById('base-stock-version-select')?.value || '';
+    const fromDate = document.getElementById('base-stock-from-date')?.value || '';
+    const toDate = document.getElementById('base-stock-to-date')?.value || '';
+    const brand = document.getElementById('base-stock-brand-filter')?.value || '';
+    const category = document.getElementById('base-stock-category-filter')?.value || '';
+    const product = (baseStockActiveTab === 'common'
+        ? document.getElementById('base-stock-product-select-filter')?.value
+        : document.getElementById('base-stock-product-filter')?.value) || '';
+    const search = document.getElementById('base-stock-search')?.value || '';
+
+    const params = new URLSearchParams();
+    if (fabricName) params.set('fabric', fabricName);
+    if (plan_name) params.set('plan_name', plan_name);
+    if (financial_year) params.set('financial_year', financial_year);
+    if (version) params.set('version', version);
+    if (fromDate) params.set('from_date', fromDate);
+    if (toDate) params.set('to_date', toDate);
+    if (brand) params.set('brand', brand);
+    if (category) params.set('category', category);
+    if (product) params.set('product', product);
+    if (search) params.set('search', search);
+    params.set('consider_fg', baseStockConsider.fg);
+    params.set('consider_wip', baseStockConsider.wip);
+    params.set('consider_pending', baseStockConsider.pending);
+
+    return `/fabric-requirement-detail?${params.toString()}`;
+}
+
+function renderBaseStockGrid(rows) {
+    const tbody = document.getElementById('base-stock-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (baseStockMainTab === 'fg') {
+        const colSpan = getFgBaseStockColumns().length;
+
+        if (rows.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="${colSpan}" style="text-align: center; color: var(--text-muted); padding: 32px 16px;">
+                        No Base Stock planning records match the selected criteria.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.id = `base-stock-row-${r.id}`;
+
+            const pathBadge = baseStockActiveTab === 'common'
+                ? `<span class="badge" style="background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.2);">Common Path</span>`
+                : `<span class="badge" style="background: rgba(107, 114, 128, 0.1); color: var(--text-secondary); border: 1px solid rgba(107, 114, 128, 0.2);">Standalone</span>`;
+
+            const detailsBtn = baseStockActiveTab === 'common'
+                ? `<button class="btn btn-sm btn-outline btn-toggle-expand" style="padding: 2px 6px; font-size: 11px;" onclick="toggleBaseStockCommonGroupMembers('${r.from_date}', '${r.to_date}', '${r.common_production_name}', '${r.size}', '${r.color}', this, '${r.global_color_code || ''}')">
+                       <i class="fa-solid fa-chevron-right"></i>
+                   </button>`
+                : `<span style="color: var(--text-muted); font-size: 12px;">-</span>`;
+
+            const fabricDisplay = r.fabric_name
+                ? `<a class="fabric-link-btn" href="${getBaseStockFabricDetailUrl(r.fabric_name)}" target="_blank" rel="noopener noreferrer" title="View Fabric Details for ${r.fabric_name}">${r.fabric_name}</a>`
+                : '-';
+
+            tr.innerHTML = `
+                <td style="text-align: center; vertical-align: middle;">${detailsBtn}</td>
+                <td>${r.from_date} to ${r.to_date}</td>
+                <td>${r.brand || '-'}</td>
+                <td>${r.category || '-'}</td>
+                <td><strong>${r.product}</strong></td>
+                <td>${fabricDisplay}</td>
+                <td>${r.color || '-'}</td>
+                <td><span class="badge badge-outline">${r.size}</span></td>
+                <td class="text-right">${Number(r.calculated_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td class="text-right">${Number(r.finished_goods_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td class="text-right">${Number(r.production_wip_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td class="text-right">${Number(r.pending_production_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td class="text-right" style="background: rgba(16, 185, 129, 0.05); font-weight: 700; color: var(--accent-green);">${Number(r.excess_qty || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td class="text-right" style="background: rgba(59, 130, 246, 0.05); font-weight: 700; color: var(--accent-blue);">${Number(r.bal_required_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td style="text-align: center; vertical-align: middle;">${pathBadge}</td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+        return;
+    }
+
+    // ORIGINAL FABRIC BASE STOCK QTY BREAKUP GRID (100% UNCHANGED, 14 COLUMNS)
+    if (rows.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="14" style="text-align: center; color: var(--text-muted); padding: 32px 16px;">
+                    No Base Stock planning records match the selected criteria.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.id = `base-stock-row-${r.id}`;
+
+        const pathBadge = baseStockActiveTab === 'common'
+            ? `<span class="badge" style="background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.2);">Common Path</span>`
+            : `<span class="badge" style="background: rgba(107, 114, 128, 0.1); color: var(--text-secondary); border: 1px solid rgba(107, 114, 128, 0.2);">Standalone</span>`;
+
+        const detailsBtn = baseStockActiveTab === 'common'
+            ? `<button class="btn btn-sm btn-outline btn-toggle-expand" style="padding: 2px 6px; font-size: 11px;" onclick="toggleBaseStockCommonGroupMembers('${r.from_date}', '${r.to_date}', '${r.common_production_name}', '${r.size}', '${r.color}', this, '${r.global_color_code || ''}')">
+                   <i class="fa-solid fa-chevron-right"></i>
+               </button>`
+            : `<span style="color: var(--text-muted); font-size: 12px;">-</span>`;
+
+        const fabricDisplay = r.fabric_name
+            ? `<a class="fabric-link-btn" href="${getBaseStockFabricDetailUrl(r.fabric_name)}" target="_blank" rel="noopener noreferrer" title="View Fabric Details for ${r.fabric_name}">${r.fabric_name}</a>`
+            : '-';
+
+        tr.innerHTML = `
+            <td style="text-align: center; vertical-align: middle;">${detailsBtn}</td>
+            <td>${r.from_date} to ${r.to_date}</td>
+            <td>${r.brand || '-'}</td>
+            <td>${r.category || '-'}</td>
+            <td><strong>${r.product}</strong></td>
+            <td>${fabricDisplay}</td>
+            <td>${r.color || '-'}</td>
+            <td><span class="badge badge-outline">${r.size}</span></td>
+            <td class="text-right">${Number(r.calculated_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td class="text-right">${Number(r.finished_goods_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td class="text-right">${Number(r.production_wip_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td class="text-right">${Number(r.pending_production_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td class="text-right" style="background: rgba(59, 130, 246, 0.05); font-weight: 700; color: var(--accent-blue);">${Number(r.bal_required_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+            <td style="text-align: center; vertical-align: middle;">${pathBadge}</td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+}
+
+function renderBaseStockHeaders() {
+    const thead = document.querySelector('#table-base-stock thead');
+    if (!thead) return;
+
+    if (baseStockMainTab === 'fg') {
+        const cols = getFgBaseStockColumns();
+        const thHtmls = cols.map(c => {
+            if (!c.filterable) {
+                const widthStyle = c.width ? `width: ${c.width};` : '';
+                return `<th style="${widthStyle} text-align: ${c.align};">${c.title}</th>`;
+            }
+            const widthStyle = c.width ? `width: ${c.width};` : '';
+            const combinedStyle = `${widthStyle} ${c.customStyle || ''}`.trim();
+            return getBaseStockThHtml(c.title, c.key, c.align === 'right', combinedStyle);
+        }).join('');
+
+        thead.innerHTML = `
+            <tr style="position: sticky; top:0; background: var(--bg-card); z-index:2; box-shadow: inset 0 -1px 0 var(--border-color);">
+                ${thHtmls}
+            </tr>
+        `;
+        return;
+    }
+
+    // ORIGINAL FABRIC BASE STOCK CODE PATH (100% UNCHANGED)
+    if (baseStockActiveTab === 'fabric') {
+        renderBaseStockFabricReqHeaders();
+        return;
+    }
+
+    const productTitle = baseStockActiveTab === 'common' ? 'Product / Common Group' : 'Product';
+
+    thead.innerHTML = `
+        <tr style="position: sticky; top:0; background: var(--bg-card); z-index:2; box-shadow: inset 0 -1px 0 var(--border-color);">
+            <th style="width: 50px; text-align: center;">Details</th>
+            ${getBaseStockThHtml('Period', 'period')}
+            ${getBaseStockThHtml('Brand', 'brand')}
+            ${getBaseStockThHtml('Category', 'category')}
+            ${getBaseStockThHtml(productTitle, 'product')}
+            ${getBaseStockThHtml('Fabric Name', 'fabric_name')}
+            ${getBaseStockThHtml('Color', 'color')}
+            ${getBaseStockThHtml('Size', 'size')}
+            ${getBaseStockThHtml('Req Qty', 'calculated_qty', true)}
+            ${getBaseStockThHtml('FG Stock', 'finished_goods_qty', true)}
+            ${getBaseStockThHtml('WIP Qty', 'production_wip_qty', true)}
+            ${getBaseStockThHtml('Pending Qty', 'pending_production_qty', true)}
+            ${getBaseStockThHtml('Bal Req Qty', 'bal_required_qty', true, 'background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); font-weight: 700;')}
+            ${getBaseStockThHtml('Path Type', 'production_type', false, 'width: 120px; text-align: center;')}
+        </tr>
+    `;
+}
+
+function getBaseStockThHtml(title, colKey, isRightAligned = false, customStyle = '') {
+    const active = isBaseStockFilterActive(colKey);
+    const alignClass = isRightAligned ? 'text-right' : '';
+    const justifyStyle = isRightAligned ? 'justify-content: flex-end;' : 'justify-content: space-between;';
+
+    return `
+        <th class="${alignClass}" style="position: relative; ${customStyle}">
+            <div style="display: flex; align-items: center; ${justifyStyle} gap: 4px; width: 100%;">
+                <span>${title}</span>
+                <i class="fa-solid fa-filter" id="base-stock-filter-btn-${colKey}" onclick="toggleBaseStockFilterPopup(event, '${colKey}')" 
+                   style="cursor: pointer; font-size: 11px; margin-left: 4px; transition: color 0.2s; color: ${active ? 'var(--accent-blue)' : 'var(--text-secondary)'}; opacity: ${active ? '1' : '0.6'};"
+                   title="Filter ${title}"></i>
+            </div>
+        </th>
+    `;
+}
+
+function isBaseStockFilterActive(colKey) {
+    const filter = baseStockColumnFilters[colKey];
+    if (!filter) return false;
+    return filter.selectedSet && filter.selectedSet.size > 0;
+}
+
+function toggleBaseStockFilterPopup(event, colKey) {
+    event.stopPropagation();
+
+    const existing = document.getElementById('base-stock-filter-popup');
+    if (existing) {
+        existing.remove();
+        if (currentBaseStockFilterColumn === colKey) {
+            currentBaseStockFilterColumn = null;
+            return;
+        }
+    }
+
+    currentBaseStockFilterColumn = colKey;
+
+    const rect = event.target.getBoundingClientRect();
+    const top = rect.bottom + window.scrollY + 6;
+    const left = Math.max(10, rect.left + window.scrollX - 160);
+
+    const popup = document.createElement('div');
+    popup.id = 'base-stock-filter-popup';
+    popup.style.position = 'absolute';
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+    popup.style.zIndex = '9999';
+    popup.style.background = '#202433';
+    popup.style.border = '1px solid rgba(255,255,255,0.12)';
+    popup.style.borderRadius = '8px';
+    popup.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
+    popup.style.width = '240px';
+    popup.style.padding = '12px';
+    popup.style.display = 'flex';
+    popup.style.flexDirection = 'column';
+    popup.style.gap = '10px';
+    popup.onclick = (e) => e.stopPropagation();
+
+    const colFilter = baseStockColumnFilters[colKey] || { selectedList: [] };
+
+    const uniqueValuesSet = new Set();
+    const targetData = baseStockActiveTab === 'fabric' ? baseStockFabricAllData : baseStockAllData;
+    targetData.forEach(row => {
+        uniqueValuesSet.add(getBaseStockRowValueFormatted(row, colKey));
+    });
+
+    const sortedUniqueValues = Array.from(uniqueValuesSet).sort((a, b) => {
+        const na = parseFloat(a);
+        const nb = parseFloat(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const selSet = new Set(colFilter.selectedList || []);
+    const isFilteredChecklist = selSet.size > 0;
+
+    let checklistHtml = sortedUniqueValues.map(val => {
+        const isChecked = isFilteredChecklist ? selSet.has(val) : true;
+        const displayVal = val === '' ? '(Blank)' : val;
+        return `
+            <label class="checkbox-container base-stock-checklist-item" style="display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; font-weight: normal; cursor: pointer; color: var(--text-primary);">
+                <input type="checkbox" class="base-stock-filter-checklist-checkbox" value="${val}" ${isChecked ? 'checked' : ''} onchange="onBaseStockChecklistItemChange()">
+                <span class="checkmark"></span>
+                <span>${displayVal}</span>
+            </label>
+        `;
+    }).join('');
+
+    let html = `
+        <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 2px;">
+            Checklist Filter
+        </div>
+        <input type="text" id="base-stock-checklist-search" placeholder="Search values..." oninput="onBaseStockChecklistSearch(this.value)"
+            style="width: 100%; padding: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-primary); border-radius: 4px; outline: none; font-size: 12px;">
+        <div style="max-height: 140px; overflow-y: auto; padding: 4px; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 4px;" id="base-stock-checklist-container">
+            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; font-weight: bold; cursor: pointer;">
+                <input type="checkbox" id="base-stock-filter-select-all" ${!isFilteredChecklist ? 'checked' : ''} onchange="onBaseStockFilterToggleSelectAll(this)">
+                <span class="checkmark"></span>
+                <span>(Select All)</span>
+            </label>
+            <div id="base-stock-checklist-items-wrapper">
+                ${checklistHtml}
+            </div>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+            <button class="btn btn-outline btn-xs" onclick="closeBaseStockFilterPopup()" style="padding: 4px 8px; font-size: 11px;">Cancel</button>
+            <button class="btn btn-outline btn-xs" onclick="clearBaseStockFilter('${colKey}')" style="padding: 4px 8px; font-size: 11px; color: var(--accent-red);">Clear Filter</button>
+            <button class="btn btn-primary btn-xs" onclick="applyBaseStockFilter('${colKey}')" style="padding: 4px 8px; font-size: 11px;">Apply</button>
+        </div>
+    `;
+
+    popup.innerHTML = html;
+    document.body.appendChild(popup);
+
+    if (!window.baseStockFilterOutsideClickRegistered) {
+        document.addEventListener('click', (e) => {
+            const pop = document.getElementById('base-stock-filter-popup');
+            if (pop && !pop.contains(e.target) && !e.target.classList.contains('fa-filter')) {
+                pop.remove();
+                currentBaseStockFilterColumn = null;
+            }
+        });
+        window.baseStockFilterOutsideClickRegistered = true;
+    }
+}
+
+function onBaseStockChecklistSearch(term) {
+    const query = term.toLowerCase().trim();
+    const items = document.querySelectorAll('.base-stock-checklist-item');
+    items.forEach(item => {
+        const valText = item.querySelector('span:last-child').textContent.toLowerCase();
+        if (valText.includes(query)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function onBaseStockFilterToggleSelectAll(selectAllCheckbox) {
+    const checkboxes = document.querySelectorAll('.base-stock-filter-checklist-checkbox');
+    checkboxes.forEach(cb => {
+        const parent = cb.closest('.base-stock-checklist-item');
+        if (parent && parent.style.display !== 'none') {
+            cb.checked = selectAllCheckbox.checked;
+        }
+    });
+}
+
+function onBaseStockChecklistItemChange() {
+    const selectAllCheckbox = document.getElementById('base-stock-filter-select-all');
+    if (!selectAllCheckbox) return;
+
+    const checkboxes = Array.from(document.querySelectorAll('.base-stock-filter-checklist-checkbox'));
+    const allChecked = checkboxes.every(cb => cb.checked);
+    const noneChecked = checkboxes.every(cb => !cb.checked);
+
+    if (allChecked) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else if (noneChecked) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    }
+}
+
+function closeBaseStockFilterPopup() {
+    const pop = document.getElementById('base-stock-filter-popup');
+    if (pop) pop.remove();
+    currentBaseStockFilterColumn = null;
+}
+
+function clearBaseStockFilter(colKey) {
+    delete baseStockColumnFilters[colKey];
+    closeBaseStockFilterPopup();
+    if (baseStockActiveTab === 'fabric') {
+        processBaseStockFabricReqFiltersAndRender();
+    } else {
+        processBaseStockFiltersAndRender();
+    }
+}
+
+function applyBaseStockFilter(colKey) {
+    const selectAllCheckbox = document.getElementById('base-stock-filter-select-all');
+    let selectedList = [];
+
+    if (selectAllCheckbox && (!selectAllCheckbox.checked || selectAllCheckbox.indeterminate)) {
+        const checkboxes = document.querySelectorAll('.base-stock-filter-checklist-checkbox');
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selectedList.push(cb.value);
+            }
+        });
+    }
+
+    baseStockColumnFilters[colKey] = {
+        selectedList: selectedList,
+        selectedSet: new Set(selectedList)
+    };
+
+    closeBaseStockFilterPopup();
+    if (baseStockActiveTab === 'fabric') {
+        processBaseStockFabricReqFiltersAndRender();
+    } else {
+        processBaseStockFiltersAndRender();
+    }
+}
+
+function getBaseStockRowValue(row, colKey) {
+    if (colKey === 'period') {
+        return `${row.from_date} to ${row.to_date}`;
+    }
+    if (colKey === 'production_type') {
+        return baseStockActiveTab === 'common' ? 'Common Path' : 'Standalone';
+    }
+    return row[colKey];
+}
+
+function getBaseStockRowValueFormatted(row, colKey) {
+    const val = getBaseStockRowValue(row, colKey);
+    if (val === null || val === undefined) return '';
+    return val.toString().trim();
+}
+
+function applyBaseStockColumnFilters(dataList) {
+    let result = [...dataList];
+
+    for (const [colKey, filterState] of Object.entries(baseStockColumnFilters)) {
+        if (!filterState) continue;
+
+        const { selectedSet } = filterState;
+
+        if (selectedSet && selectedSet.size > 0) {
+            result = result.filter(row => {
+                const val = getBaseStockRowValueFormatted(row, colKey);
+                return selectedSet.has(val);
+            });
+        }
+    }
+
+    return result;
+}
+
+function processBaseStockFiltersAndRender() {
+    baseStockFilteredData = applyBaseStockColumnFilters(baseStockAllData);
+
+    renderBaseStockHeaders();
+
+    const perPage = parseInt(document.getElementById('base-stock-per-page')?.value) || 50;
+    const totalCount = baseStockFilteredData.length;
+    const totalPages = Math.ceil(totalCount / perPage) || 1;
+    if (baseStockCurrentPage > totalPages) {
+        baseStockCurrentPage = totalPages;
+    }
+
+    const startIndex = (baseStockCurrentPage - 1) * perPage;
+    const pageSubset = baseStockFilteredData.slice(startIndex, startIndex + perPage);
+
+    renderBaseStockGrid(pageSubset);
+    renderBaseStockPagination(totalCount, perPage, baseStockCurrentPage);
+    const totalCountEl = document.getElementById('base-stock-total-count');
+    if (totalCountEl) totalCountEl.textContent = totalCount;
+}
+
+function renderBaseStockPagination(totalCount, perPage, currentPage) {
+    const container = document.getElementById('base-stock-pagination');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const totalPages = Math.ceil(totalCount / perPage);
+    if (totalPages <= 1) return;
+
+    const maxVisible = 5;
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+
+    if (endPage - startPage < maxVisible - 1) {
+        startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    if (currentPage > 1) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline';
+        btn.innerHTML = '<i class="fa-solid fa-angles-left"></i>';
+        btn.onclick = () => changeBaseStockPage(1);
+        container.appendChild(btn);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = `btn btn-sm ${i === currentPage ? 'btn-primary' : 'btn-outline'}`;
+        btn.textContent = i;
+        btn.onclick = () => changeBaseStockPage(i);
+        container.appendChild(btn);
+    }
+
+    if (currentPage < totalPages) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline';
+        btn.innerHTML = '<i class="fa-solid fa-angles-right"></i>';
+        btn.onclick = () => changeBaseStockPage(totalPages);
+        container.appendChild(btn);
+    }
+}
+
+function changeBaseStockPage(page) {
+    baseStockCurrentPage = page;
+    if (baseStockActiveTab === 'fabric') {
+        processBaseStockFabricReqFiltersAndRender();
+    } else {
+        processBaseStockFiltersAndRender();
+    }
+}
+
+function recalculateBaseStock() {
+    baseStockStandaloneData = [];
+    baseStockCommonData = [];
+    loadBaseStockData(1, true);
+}
+
+function exportBaseStockExcel() {
+    if (baseStockActiveTab === 'fabric') {
+        exportBaseStockFabricReqExcel();
+        return;
+    }
+
+    const planVal = document.getElementById('base-stock-plan-select')?.value;
+    if (!planVal) {
+        showToast('Warning', 'Please select a valid Plan first.', 'warning');
+        return;
+    }
+
+    if (!baseStockFilteredData || baseStockFilteredData.length === 0) {
+        showToast('Warning', 'No filtered data to export.', 'warning');
+        return;
+    }
+
+    let headers = [];
+    let dataRows = [];
+
+    if (baseStockMainTab === 'fg') {
+        headers = [
+            'Period',
+            'Brand',
+            'Category',
+            baseStockActiveTab === 'common' ? 'Product / Common Group' : 'Product',
+            'Fabric Name',
+            'Color',
+            'Size',
+            'Base Stock',
+            'FG Stock',
+            'WIP Qty',
+            'Pending O.Qty',
+            'Excess Qty',
+            'Need To Cut Qty',
+            'Path Type'
+        ];
+
+        dataRows = baseStockFilteredData.map(r => [
+            `${r.from_date} to ${r.to_date}`,
+            r.brand || '',
+            r.category || '',
+            r.product || '',
+            r.fabric_name || '',
+            r.color || '',
+            r.size || '',
+            Number(r.calculated_qty || 0),
+            Number(r.finished_goods_qty || 0),
+            Number(r.production_wip_qty || 0),
+            Number(r.pending_production_qty || 0),
+            Number(r.excess_qty || 0),
+            Number(r.bal_required_qty || 0),
+            baseStockActiveTab === 'common' ? 'Common Path' : 'Standalone'
+        ]);
+    } else {
+        // ORIGINAL FABRIC EXCEL EXPORT (100% UNCHANGED)
+        headers = [
+            'Period',
+            'Brand',
+            'Category',
+            baseStockActiveTab === 'common' ? 'Product / Common Group' : 'Product',
+            'Fabric Name',
+            'Color',
+            'Size',
+            'Req Qty',
+            'FG Stock',
+            'WIP Qty',
+            'Pending Qty',
+            'Bal Req Qty',
+            'Path Type'
+        ];
+
+        dataRows = baseStockFilteredData.map(r => [
+            `${r.from_date} to ${r.to_date}`,
+            r.brand || '',
+            r.category || '',
+            r.product || '',
+            r.fabric_name || '',
+            r.color || '',
+            r.size || '',
+            Number(r.calculated_qty || 0),
+            Number(r.finished_goods_qty || 0),
+            Number(r.production_wip_qty || 0),
+            Number(r.pending_production_qty || 0),
+            Number(r.bal_required_qty || 0),
+            baseStockActiveTab === 'common' ? 'Common Path' : 'Standalone'
+        ]);
+    }
+
+    const sheetData = [headers, ...dataRows];
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+    const max_cols = headers.length;
+    const colWidths = [];
+    for (let c = 0; c < max_cols; c++) {
+        let max_len = headers[c].length;
+        for (let r = 0; r < sheetData.length; r++) {
+            const cellVal = sheetData[r][c];
+            if (cellVal !== null && cellVal !== undefined) {
+                const len = cellVal.toString().length;
+                if (len > max_len) max_len = len;
+            }
+        }
+        colWidths.push({ wch: Math.min(50, Math.max(10, max_len + 2)) });
+    }
+    worksheet['!cols'] = colWidths;
+
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
+
+    worksheet['!views'] = [{
+        state: 'frozen',
+        ySplit: 1,
+        xSplit: 0,
+        topLeftCell: 'A2',
+        activePane: 'bottomLeft'
+    }];
+
+    const workbook = XLSX.utils.book_new();
+    const sheetName = baseStockActiveTab === 'common' ? 'Common Production' : 'Standalone';
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const typeLabel = baseStockActiveTab === 'common' ? 'Common' : 'Standalone';
+    const filename = `Base_Stock_${typeLabel}_${todayStr}.xlsx`;
+
+    XLSX.writeFile(workbook, filename);
+}
+
+// =========================================================================
+// FINISHED GOODS BASE STOCK - TAB 3: TABLE VIEW LOGIC
+// =========================================================================
+
+function getFgRecordIdentity(row) {
+    const cpName = (row.common_production_name || '').toString().trim();
+
+    if (cpName !== '') {
+        return {
+            isCommon: true,
+            type: 'Common Production',
+            name: cpName,
+            key: `CP::${cpName}`,
+            label: `${cpName} (Common Production)`
+        };
+    }
+
+    const prodName = (row.product || '').toString().trim();
+
+    return {
+        isCommon: false,
+        type: 'Standalone',
+        name: prodName,
+        key: `SA::${prodName}`,
+        label: `${prodName} (Standalone)`
+    };
+}
+
+let fgTableFilters = {
+    brand: new Set(),
+    category: new Set(),
+    product: new Set(), // stores compound identity keys (SA:: / CP::)
+    color: new Set(),
+    size: new Set()
+};
+let fgTableCurrentMetric = 'bal_required_qty';
+let currentFgFilterColumn = null;
+
+function onFgTableMetricChange() {
+    const select = document.getElementById('fg-table-view-metric-select');
+    if (select) {
+        fgTableCurrentMetric = select.value;
+    }
+    renderBaseStockTableView();
+}
+
+function resetFgTableFilters() {
+    fgTableFilters = {
+        brand: new Set(),
+        category: new Set(),
+        product: new Set(),
+        color: new Set(),
+        size: new Set()
+    };
+    updateFgFilterButtonStyles();
+    renderBaseStockTableView();
+}
+
+function updateFgFilterButtonStyles() {
+    const labels = {
+        brand: 'Brand',
+        category: 'Category',
+        product: 'Product / Group',
+        color: 'Color',
+        size: 'Size'
+    };
+
+    ['brand', 'category', 'product', 'color', 'size'].forEach(col => {
+        const btn = document.getElementById(`fg-filter-btn-${col}`);
+        if (!btn) return;
+        const count = fgTableFilters[col]?.size || 0;
+        if (count > 0) {
+            btn.classList.add('active-filter');
+            btn.innerHTML = `<span>${labels[col]} (${count})</span> <i class="fa-solid fa-chevron-down" style="font-size: 10px; margin-left: 4px;"></i>`;
+        } else {
+            btn.classList.remove('active-filter');
+            btn.innerHTML = `<span>${labels[col]}</span> <i class="fa-solid fa-chevron-down" style="font-size: 10px; margin-left: 4px;"></i>`;
+        }
+    });
+
+    const hasAnyMultiFilter = Object.values(fgTableFilters).some(s => s && s.size > 0);
+    const resetBtn = document.getElementById('fg-filter-btn-reset');
+    if (resetBtn) {
+        resetBtn.style.display = hasAnyMultiFilter ? 'inline-flex' : 'none';
+    }
+}
+
+function toggleFgTableFilterPopup(event, colKey) {
+    event.stopPropagation();
+
+    const existing = document.getElementById('fg-table-filter-popup');
+    if (existing) {
+        existing.remove();
+        if (currentFgFilterColumn === colKey) {
+            currentFgFilterColumn = null;
+            return;
+        }
+    }
+
+    currentFgFilterColumn = colKey;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const top = rect.bottom + window.scrollY + 6;
+    const left = Math.max(10, rect.left + window.scrollX - 60);
+
+    const popup = document.createElement('div');
+    popup.id = 'fg-table-filter-popup';
+    popup.style.position = 'absolute';
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+    popup.style.zIndex = '9999';
+    popup.style.background = '#202433';
+    popup.style.border = '1px solid rgba(255,255,255,0.12)';
+    popup.style.borderRadius = '8px';
+    popup.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
+    popup.style.width = '260px';
+    popup.style.padding = '12px';
+    popup.style.display = 'flex';
+    popup.style.flexDirection = 'column';
+    popup.style.gap = '10px';
+    popup.onclick = (e) => e.stopPropagation();
+
+    // Extract options: for 'product', use compound key and label; for others, use field values
+    const uniqueOptions = [];
+    const targetData = getFgTableActivePool();
+    if (colKey === 'product') {
+        const prodMap = new Map();
+        targetData.forEach(row => {
+            const id = getFgRecordIdentity(row);
+            if (id.name && !prodMap.has(id.key)) {
+                prodMap.set(id.key, { val: id.key, label: id.label });
+            }
+        });
+        const sorted = Array.from(prodMap.values()).sort((a, b) =>
+            a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+        );
+        sorted.forEach(item => uniqueOptions.push(item));
+    } else {
+        const set = new Set();
+        targetData.forEach(row => {
+            const val = (row[colKey] || '').toString().trim();
+            if (val) set.add(val);
+        });
+        const sorted = Array.from(set).sort((a, b) => {
+            const na = parseFloat(a);
+            const nb = parseFloat(b);
+            if (!isNaN(na) && !isNaN(nb)) return na - nb;
+            return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        sorted.forEach(val => uniqueOptions.push({ val: val, label: val }));
+    }
+
+    const activeSet = fgTableFilters[colKey] || new Set();
+    const isFiltered = activeSet.size > 0;
+
+    let checklistHtml = uniqueOptions.map(opt => {
+        const isChecked = isFiltered ? activeSet.has(opt.val) : true;
+        return `
+            <label class="checkbox-container fg-checklist-item" style="display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; font-weight: normal; cursor: pointer; color: var(--text-primary);">
+                <input type="checkbox" class="fg-filter-checkbox" value="${opt.val}" ${isChecked ? 'checked' : ''} onchange="onFgChecklistItemChange()">
+                <span class="checkmark"></span>
+                <span>${opt.label}</span>
+            </label>
+        `;
+    }).join('');
+
+    const titles = {
+        brand: 'Brand',
+        category: 'Category',
+        product: 'Product / Group',
+        color: 'Color',
+        size: 'Size'
+    };
+
+    popup.innerHTML = `
+        <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 2px;">
+            Filter ${titles[colKey] || colKey}
+        </div>
+        <input type="text" id="fg-checklist-search" placeholder="Search values..." oninput="onFgChecklistSearch(this.value)"
+            style="width: 100%; padding: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: var(--text-primary); border-radius: 4px; outline: none; font-size: 12px;">
+        <div style="max-height: 160px; overflow-y: auto; padding: 4px; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 4px;" id="fg-checklist-container">
+            <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; font-weight: bold; cursor: pointer;">
+                <input type="checkbox" id="fg-filter-select-all" ${!isFiltered ? 'checked' : ''} onchange="onFgFilterToggleSelectAll(this)">
+                <span class="checkmark"></span>
+                <span>(Select All)</span>
+            </label>
+            <div id="fg-checklist-items-wrapper">
+                ${checklistHtml}
+            </div>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+            <button class="btn btn-outline btn-xs" onclick="closeFgFilterPopup()" style="padding: 4px 8px; font-size: 11px;">Cancel</button>
+            <button class="btn btn-outline btn-xs" onclick="clearFgFilter('${colKey}')" style="padding: 4px 8px; font-size: 11px; color: var(--accent-red);">Clear</button>
+            <button class="btn btn-primary btn-xs" onclick="applyFgFilter('${colKey}')" style="padding: 4px 8px; font-size: 11px;">Apply</button>
+        </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    if (!window.fgFilterOutsideClickRegistered) {
+        document.addEventListener('click', (e) => {
+            const pop = document.getElementById('fg-table-filter-popup');
+            if (pop && !pop.contains(e.target) && !e.target.closest('.fg-table-filter-btn')) {
+                pop.remove();
+                currentFgFilterColumn = null;
+            }
+        });
+        window.fgFilterOutsideClickRegistered = true;
+    }
+}
+
+function onFgChecklistSearch(term) {
+    const query = term.toLowerCase().trim();
+    const items = document.querySelectorAll('.fg-checklist-item');
+    items.forEach(item => {
+        const valText = item.querySelector('span:last-child').textContent.toLowerCase();
+        if (valText.includes(query)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function onFgFilterToggleSelectAll(selectAllCb) {
+    const checkboxes = document.querySelectorAll('.fg-filter-checkbox');
+    checkboxes.forEach(cb => {
+        const parent = cb.closest('.fg-checklist-item');
+        if (parent && parent.style.display !== 'none') {
+            cb.checked = selectAllCb.checked;
+        }
+    });
+}
+
+function onFgChecklistItemChange() {
+    const selectAllCb = document.getElementById('fg-filter-select-all');
+    if (!selectAllCb) return;
+
+    const checkboxes = Array.from(document.querySelectorAll('.fg-filter-checkbox'));
+    const allChecked = checkboxes.every(cb => cb.checked);
+    const noneChecked = checkboxes.every(cb => !cb.checked);
+
+    if (allChecked) {
+        selectAllCb.checked = true;
+        selectAllCb.indeterminate = false;
+    } else if (noneChecked) {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = false;
+    } else {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = true;
+    }
+}
+
+function closeFgFilterPopup() {
+    const pop = document.getElementById('fg-table-filter-popup');
+    if (pop) pop.remove();
+    currentFgFilterColumn = null;
+}
+
+function clearFgFilter(colKey) {
+    fgTableFilters[colKey] = new Set();
+    closeFgFilterPopup();
+    updateFgFilterButtonStyles();
+    renderBaseStockTableView();
+}
+
+function applyFgFilter(colKey) {
+    const selectAllCb = document.getElementById('fg-filter-select-all');
+    const selected = new Set();
+
+    if (selectAllCb && (!selectAllCb.checked || selectAllCb.indeterminate)) {
+        const checkboxes = document.querySelectorAll('.fg-filter-checkbox');
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selected.add(cb.value);
+            }
+        });
+    }
+
+    fgTableFilters[colKey] = selected;
+    closeFgFilterPopup();
+    updateFgFilterButtonStyles();
+    renderBaseStockTableView();
+}
+
+function renderBaseStockTableView() {
+    const container = document.getElementById('fg-table-sections-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    // Step 1: Start with pooled rows based on fgTableProductionTypeFilter
+    let rows = getFgTableActivePool();
+
+    // Step 2: Apply all existing multi-select filters (using identity.key for Product / Group!)
+    rows = rows.filter(row => {
+        const identity = getFgRecordIdentity(row);
+        const b = (row.brand || '').toString().trim();
+        const c = (row.category || '').toString().trim();
+        const col = (row.color || '').toString().trim();
+        const s = (row.size || '').toString().trim();
+
+        if (fgTableFilters.brand.size > 0 && !fgTableFilters.brand.has(b)) return false;
+        if (fgTableFilters.category.size > 0 && !fgTableFilters.category.has(c)) return false;
+        if (fgTableFilters.product.size > 0 && !fgTableFilters.product.has(identity.key)) return false;
+        if (fgTableFilters.color.size > 0 && !fgTableFilters.color.has(col)) return false;
+        if (fgTableFilters.size.size > 0 && !fgTableFilters.size.has(s)) return false;
+
+        return true;
+    });
+
+    if (rows.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 32px 16px; background: var(--bg-card, #202433); border: 1px dashed var(--border-color); border-radius: 8px;">
+                No records match the selected criteria.
+            </div>`;
+        return;
+    }
+
+    // Step 3: Partition rows strictly by Product / Group identity (Zero cross-product summation)
+    const groupsMap = new Map();
+    rows.forEach(row => {
+        const id = getFgRecordIdentity(row);
+        if (!groupsMap.has(id.key)) {
+            groupsMap.set(id.key, {
+                identity: id,
+                rows: []
+            });
+        }
+        groupsMap.get(id.key).rows.push(row);
+    });
+
+    // Step 4: Sort groups alphabetically
+    const sortedGroups = Array.from(groupsMap.values()).sort((a, b) =>
+        a.identity.name.localeCompare(b.identity.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    // Natural apparel size sorter helper
+    const apparelOrder = ['2XS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', '5XL', '6XL', '7XL', '8XL', 'FS', 'FREE SIZE'];
+    function sortSizes(sizeArray) {
+        return sizeArray.sort((a, b) => {
+            const idxA = apparelOrder.indexOf(a.toUpperCase());
+            const idxB = apparelOrder.indexOf(b.toUpperCase());
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+
+            const numA = parseFloat(a);
+            const numB = parseFloat(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+
+            return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        });
+    }
+
+    // Step 5: Render a separate section for each Product / Group
+    sortedGroups.forEach(group => {
+        // Collect sizes & colors strictly belonging to THIS product/group
+        const sizeSet = new Set();
+        const colorSet = new Set();
+        const matrixAgg = {}; // { [color]: { [size]: sumValue } }
+
+        group.rows.forEach(r => {
+            const col = (r.color || '-').toString().trim();
+            const sz = (r.size || '-').toString().trim();
+            const val = Number(r[fgTableCurrentMetric]) || 0;
+
+            colorSet.add(col);
+            sizeSet.add(sz);
+
+            if (!matrixAgg[col]) matrixAgg[col] = {};
+            matrixAgg[col][sz] = (matrixAgg[col][sz] || 0) + val;
+        });
+
+        const sortedSizes = sortSizes(Array.from(sizeSet));
+        const sortedColors = Array.from(colorSet).sort((a, b) =>
+            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+        );
+
+        const badgeClass = group.identity.isCommon ? 'fg-path-badge-cp' : 'fg-path-badge-sa';
+        const badgeText = group.identity.type;
+
+        // Calculate Column Totals & Grand Total
+        const colTotals = {};
+        sortedSizes.forEach(sz => {
+            colTotals[sz] = 0;
+        });
+        let grandTotal = 0;
+
+        let theadCols = `<th class="fg-matrix-col-color" style="text-align: left;">COLOR</th>`;
+        sortedSizes.forEach(sz => {
+            theadCols += `<th style="text-align: center; min-width: 80px;">${escapeHtml(sz)}</th>`;
+        });
+        theadCols += `<th class="fg-matrix-col-total" style="text-align: right; min-width: 90px; font-weight: 700;">TOTAL</th>`;
+
+        let tbodyRows = '';
+        sortedColors.forEach(col => {
+            let rowTotal = 0;
+            let rowCells = `<td class="fg-matrix-col-color" style="text-align: left; font-weight: 600;">${escapeHtml(col)}</td>`;
+            sortedSizes.forEach(sz => {
+                const qty = matrixAgg[col]?.[sz] || 0;
+                rowTotal += qty;
+                colTotals[sz] += qty;
+                const formatted = qty.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                const isZero = qty === 0;
+                rowCells += `<td style="text-align: right; font-variant-numeric: tabular-nums; ${isZero ? 'color: var(--text-muted); opacity: 0.6;' : ''}">${formatted}</td>`;
+            });
+
+            grandTotal += rowTotal;
+            const rowTotalFormatted = rowTotal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            const isRowZero = rowTotal === 0;
+            rowCells += `<td class="fg-matrix-col-total" style="text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; ${isRowZero ? 'color: var(--text-muted); opacity: 0.6;' : 'color: var(--text-primary);'}">${rowTotalFormatted}</td>`;
+
+            tbodyRows += `<tr>${rowCells}</tr>`;
+        });
+
+        // Bottom Column Totals Row (tfoot)
+        let tfootRow = `<tr>`;
+        tfootRow += `<td class="fg-matrix-col-color" style="text-align: left; font-weight: 700; text-transform: uppercase;">TOTAL</td>`;
+        sortedSizes.forEach(sz => {
+            const szTot = colTotals[sz] || 0;
+            const formatted = szTot.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            const isZero = szTot === 0;
+            tfootRow += `<td style="text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; ${isZero ? 'color: var(--text-muted); opacity: 0.6;' : 'color: var(--text-primary);'}">${formatted}</td>`;
+        });
+        const grandTotalFormatted = grandTotal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        tfootRow += `<td class="fg-matrix-col-total" style="text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--accent-blue, #3b82f6); background: rgba(59, 130, 246, 0.12);">${grandTotalFormatted}</td>`;
+        tfootRow += `</tr>`;
+
+        const sectionHtml = `
+            <div class="fg-product-section">
+                <div class="fg-product-section-header">
+                    <div class="fg-product-title">
+                        <i class="fa-solid fa-layer-group" style="color: var(--accent-blue); font-size: 13px;"></i>
+                        <span>${escapeHtml(group.identity.name)}</span>
+                        <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
+                    </div>
+                </div>
+                <div class="table-container" style="max-height: 480px; overflow: auto;">
+                    <table class="spreadsheet-table base-stock-table-view-matrix">
+                        <thead><tr>${theadCols}</tr></thead>
+                        <tbody>${tbodyRows}</tbody>
+                        <tfoot>${tfootRow}</tfoot>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        container.insertAdjacentHTML('beforeend', sectionHtml);
+    });
+}
+
+function processBaseStockFabricReqFiltersAndRender() {
+    baseStockFabricFilteredData = applyBaseStockColumnFilters(baseStockFabricAllData);
+
+    renderBaseStockFabricReqHeaders();
+
+    const perPage = parseInt(document.getElementById('base-stock-per-page')?.value) || 50;
+    const totalCount = baseStockFabricFilteredData.length;
+    const totalPages = Math.ceil(totalCount / perPage) || 1;
+    if (baseStockCurrentPage > totalPages) {
+        baseStockCurrentPage = totalPages;
+    }
+
+    const startIndex = (baseStockCurrentPage - 1) * perPage;
+    const pageSubset = baseStockFabricFilteredData.slice(startIndex, startIndex + perPage);
+
+    renderBaseStockFabricReqGrid(pageSubset);
+    renderBaseStockPagination(totalCount, perPage, baseStockCurrentPage);
+    const totalCountEl = document.getElementById('base-stock-total-count');
+    if (totalCountEl) totalCountEl.textContent = totalCount;
+}
+
+function renderBaseStockFabricReqHeaders() {
+    const thead = document.querySelector('#table-base-stock thead');
+    if (!thead) return;
+
+    thead.innerHTML = `
+        <tr style="position: sticky; top:0; background: var(--bg-card); z-index:2; box-shadow: inset 0 -1px 0 var(--border-color);">
+            <th style="width: 50px; text-align: center;">Details</th>
+            ${getBaseStockThHtml('Fabric Name', 'fabric_name')}
+            ${getBaseStockThHtml('Color', 'color')}
+            ${getBaseStockThHtml('Dia', 'dia')}
+            ${getBaseStockThHtml('Fabric Req', 'fabric_req', true)}
+            ${getBaseStockThHtml('Fabric Stock', 'fabric_stock', true)}
+            ${getBaseStockThHtml('Fabric WIP', 'fabric_wip', true)}
+            ${getBaseStockThHtml('Bal Required Fab', 'bal_required_fab', true, 'background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); font-weight: 700;')}
+            ${getBaseStockThHtml('Excess Qty', 'excess_qty', true, 'background: rgba(16, 185, 129, 0.1); color: var(--accent-green); font-weight: 700;')}
+        </tr>
+    `;
+}
+
+function renderBaseStockFabricReqGrid(rows) {
+    const tbody = document.getElementById('base-stock-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 32px 16px;">
+                    No fabric requirements match the selected criteria.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    rows.forEach(r => {
+        const tr = document.createElement('tr');
+        const rowId = `base-stock-fabric-row-${r.fabric_name.replace(/\s+/g, '_')}-${(r.color || '').replace(/\s+/g, '_')}-${r.dia}`;
+        tr.id = rowId;
+
+        const detailsBtn = `<button class="btn btn-sm btn-outline btn-toggle-expand" style="padding: 2px 6px; font-size: 11px;" 
+            onclick="toggleBaseStockFabricReqDetails('${r.fabric_name.replace(/'/g, "\\'")}', '${(r.color || '').replace(/'/g, "\\'")}', ${r.dia}, this)">
+               <i class="fa-solid fa-chevron-right"></i>
+           </button>`;
+
+        const diaText = r.dia ? `${r.dia}"` : '-';
+        const fabricLink = `<a class="fabric-link-btn" href="${getBaseStockFabricDetailUrl(r.fabric_name)}" target="_blank" rel="noopener noreferrer" title="View Fabric Details for ${r.fabric_name}"><strong>${r.fabric_name}</strong></a>`;
+
+        tr.innerHTML = `
+            <td style="text-align: center; vertical-align: middle;">${detailsBtn}</td>
+            <td>${fabricLink}</td>
+            <td>${r.color || '-'}</td>
+            <td><span class="badge badge-outline">${diaText}</span></td>
+            <td class="text-right">${Number(r.fabric_req).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-right">${Number(r.fabric_stock).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-right">${Number(r.fabric_wip).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-right" style="background: rgba(59, 130, 246, 0.05); font-weight: 700; color: var(--accent-blue);">${Number(r.bal_required_fab).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-right" style="background: rgba(16, 185, 129, 0.05); font-weight: 700; color: var(--accent-green);">${Number(r.excess_qty || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+
+    const totals = baseStockFabricTotals || { fabric_req: 0, fabric_stock: 0, fabric_wip: 0, bal_required_fab: 0, excess_qty: 0 };
+
+    let shownTotals = { ...totals };
+    if (Object.keys(baseStockColumnFilters).length > 0) {
+        shownTotals.fabric_req = baseStockFabricFilteredData.reduce((sum, r) => sum + r.fabric_req, 0);
+        shownTotals.fabric_stock = baseStockFabricFilteredData.reduce((sum, r) => sum + r.fabric_stock, 0);
+        shownTotals.fabric_wip = baseStockFabricFilteredData.reduce((sum, r) => sum + r.fabric_wip, 0);
+        shownTotals.bal_required_fab = baseStockFabricFilteredData.reduce((sum, r) => sum + r.bal_required_fab, 0);
+        shownTotals.excess_qty = baseStockFabricFilteredData.reduce((sum, r) => sum + (r.excess_qty || 0), 0);
+    }
+
+    const totalTr = document.createElement('tr');
+    totalTr.style.fontWeight = 'bold';
+    totalTr.style.background = 'rgba(255, 255, 255, 0.03)';
+    totalTr.style.borderTop = '2px solid var(--border-color)';
+    totalTr.innerHTML = `
+        <td></td>
+        <td colspan="3">TOTAL</td>
+        <td class="text-right">${Number(shownTotals.fabric_req).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="text-right">${Number(shownTotals.fabric_stock).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="text-right">${Number(shownTotals.fabric_wip).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="text-right" style="background: rgba(59, 130, 246, 0.1); color: var(--accent-blue);">${Number(shownTotals.bal_required_fab).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td class="text-right" style="background: rgba(16, 185, 129, 0.1); color: var(--accent-green);">${Number(shownTotals.excess_qty || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+    `;
+    tbody.appendChild(totalTr);
+}
+
+async function toggleBaseStockFabricReqDetails(fabricName, color, dia, triggerBtn) {
+    const parentRow = triggerBtn.closest('tr');
+    const childRowId = `base-child-fabric-breakdown-${fabricName.replace(/\s+/g, '_')}-${color.replace(/\s+/g, '_')}-${dia}`;
+    const existingChild = document.getElementById(childRowId);
+
+    if (existingChild) {
+        const icon = triggerBtn.querySelector('i');
+        if (existingChild.classList.contains('hidden')) {
+            existingChild.classList.remove('hidden');
+            if (icon) icon.className = 'fa-solid fa-chevron-down';
+        } else {
+            existingChild.classList.add('hidden');
+            if (icon) icon.className = 'fa-solid fa-chevron-right';
+        }
+        return;
+    }
+
+    triggerBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    const planVal = document.getElementById('base-stock-plan-select')?.value || '';
+    const [plan_name, financial_year] = planVal.split('|');
+    const version = document.getElementById('base-stock-version-select')?.value || '';
+    const fromDate = document.getElementById('base-stock-from-date')?.value || '';
+    const toDate = document.getElementById('base-stock-to-date')?.value || '';
+
+    const brand = document.getElementById('base-stock-brand-filter')?.value || '';
+    const category = document.getElementById('base-stock-category-filter')?.value || '';
+    const product = document.getElementById('base-stock-product-filter')?.value || '';
+    const search = document.getElementById('base-stock-search')?.value || '';
+
+    let url = `/api/base-stock/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&target_fabric_name=${encodeURIComponent(fabricName)}&target_color=${encodeURIComponent(color)}&target_dia=${encodeURIComponent(dia)}&consider_fg=${baseStockConsider.fg}&consider_wip=${baseStockConsider.wip}&consider_pending=${baseStockConsider.pending}`;
+
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (product) url += `&product=${encodeURIComponent(product)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.success) {
+            showToast('Error', data.message || 'Failed to load breakdown details', 'error');
+            triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+            return;
+        }
+
+        triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+
+        const subTr = document.createElement('tr');
+        subTr.id = childRowId;
+        subTr.style.background = 'rgba(255, 255, 255, 0.01)';
+
+        const standaloneList = (data.details || []).filter(d => d.source_type === 'Stand Alone Product');
+        const commonList = (data.details || []).filter(d => d.source_type === 'Common Production Product');
+
+        let standaloneHtml = '';
+        if (standaloneList.length > 0) {
+            standaloneHtml = `
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">Stand Alone Product</div>
+                    <table class="spreadsheet-table" style="width: 100%; border-collapse: collapse; margin: 0; border: none;">
+                        <thead style="background: rgba(255,255,255,0.01);">
+                            <tr>
+                                <th>Product Name</th>
+                                <th>Brand</th>
+                                <th>Category</th>
+                                <th>Color</th>
+                                <th>Size</th>
+                                <th class="text-right">Bal Req Qty</th>
+                                <th>Fabric Name</th>
+                                <th>Dia</th>
+                                <th class="text-right">Fabric Consumption</th>
+                                <th class="text-right">Fabric Req</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${standaloneList.map(item => `
+                                <tr>
+                                    <td>${item.name}</td>
+                                    <td>${item.brand || '-'}</td>
+                                    <td>${item.category || '-'}</td>
+                                    <td>${item.color || '-'}</td>
+                                    <td><span class="badge badge-outline">${item.size}</span></td>
+                                    <td class="text-right">${Number(item.bal_req_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                    <td>${item.fabric_name}</td>
+                                    <td>${item.dia ? item.dia + '"' : '-'}</td>
+                                    <td class="text-right">${Number(item.fabric_consumption).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
+                                    <td class="text-right" style="font-weight:600; color: var(--accent-green);">${Number(item.fabric_requirement).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        let commonHtml = '';
+        if (commonList.length > 0) {
+            commonHtml = `
+                <div>
+                    <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">Common Production Product</div>
+                    <table class="spreadsheet-table" style="width: 100%; border-collapse: collapse; margin: 0; border: none;">
+                        <thead style="background: rgba(255,255,255,0.01);">
+                            <tr>
+                                <th>Common Production Name</th>
+                                <th>Brand</th>
+                                <th>Category</th>
+                                <th>Color</th>
+                                <th>Size</th>
+                                <th class="text-right">Bal Req Qty</th>
+                                <th>Fabric Name</th>
+                                <th>Dia</th>
+                                <th class="text-right">Fabric Consumption</th>
+                                <th class="text-right">Fabric Req</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${commonList.map(item => `
+                                <tr>
+                                    <td>${item.name}</td>
+                                    <td>${item.brand || '-'}</td>
+                                    <td>${item.category || '-'}</td>
+                                    <td>${item.color || '-'}</td>
+                                    <td><span class="badge badge-outline">${item.size}</span></td>
+                                    <td class="text-right">${Number(item.bal_req_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                    <td>${item.fabric_name}</td>
+                                    <td>${item.dia ? item.dia + '"' : '-'}</td>
+                                    <td class="text-right">${Number(item.fabric_consumption).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
+                                    <td class="text-right" style="font-weight:600; color: var(--accent-green);">${Number(item.fabric_requirement).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        const totalRequirement = (data.details || []).reduce((sum, item) => sum + item.fabric_requirement, 0);
+
+        subTr.innerHTML = `
+            <td></td>
+            <td colspan="8" style="padding: 12px 20px 20px 20px;">
+                <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-card); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--accent-blue); display:flex; align-items:center; gap: 6px;">
+                            <i class="fa-solid fa-scissors"></i> CONTRIBUTORS: ${fabricName} | Color: ${color} | Dia: ${dia}"
+                        </span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--accent-green);">
+                            TOTAL FABRIC REQUIREMENT = ${Number(totalRequirement).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                    </div>
+                    <div style="padding: 12px;">
+                        ${standaloneHtml}
+                        ${commonHtml}
+                    </div>
+                </div>
+            </td>
+        `;
+
+        parentRow.after(subTr);
+    } catch (err) {
+        triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+        showToast('Error', 'Connection error loading details breakdown', 'error');
+        console.error(err);
+    }
+}
+
+async function exportBaseStockFabricReqExcel() {
+    const planVal = document.getElementById('base-stock-plan-select')?.value;
+    if (!planVal) {
+        showToast('Warning', 'Please select a valid Plan first.', 'warning');
+        return;
+    }
+
+    if (!baseStockFabricFilteredData || baseStockFabricFilteredData.length === 0) {
+        showToast('Warning', 'No filtered data to export.', 'warning');
+        return;
+    }
+
+    const loader = document.getElementById('base-stock-loader');
+    if (loader) loader.classList.remove('hidden');
+
+    const [plan_name, financial_year] = planVal.split('|');
+    const version = document.getElementById('base-stock-version-select')?.value || '';
+    const fromDate = document.getElementById('base-stock-from-date')?.value || '';
+    const toDate = document.getElementById('base-stock-to-date')?.value || '';
+
+    const brand = document.getElementById('base-stock-brand-filter')?.value || '';
+    const category = document.getElementById('base-stock-category-filter')?.value || '';
+    const product = document.getElementById('base-stock-product-filter')?.value || '';
+    const search = document.getElementById('base-stock-search')?.value || '';
+
+    let url = `/api/base-stock/fabric-req/details?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&consider_fg=${baseStockConsider.fg}&consider_wip=${baseStockConsider.wip}&consider_pending=${baseStockConsider.pending}`;
+
+    if (brand) url += `&brand=${encodeURIComponent(brand)}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (product) url += `&product=${encodeURIComponent(product)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (loader) loader.classList.add('hidden');
+
+        if (!data.success) {
+            showToast('Error', data.message || 'Failed to load details for Excel export', 'error');
+            return;
+        }
+
+        let filteredDetails = data.details || [];
+        for (const [colKey, filterState] of Object.entries(baseStockColumnFilters)) {
+            if (!filterState) continue;
+            const { selectedSet } = filterState;
+            if (selectedSet && selectedSet.size > 0) {
+                filteredDetails = filteredDetails.filter(row => {
+                    let val = '';
+                    if (colKey === 'fabric_name') val = row.fabric_name;
+                    else if (colKey === 'color') val = row.color;
+                    else if (colKey === 'dia') val = row.dia;
+
+                    const formatted = val !== null && val !== undefined ? val.toString().trim() : '';
+                    return selectedSet.has(formatted);
+                });
+            }
+        }
+
+        const summaryHeaders = [
+            'Fabric Name',
+            'Color',
+            'Dia',
+            'Fabric Req',
+            'Fabric Stock',
+            'Fabric WIP',
+            'Bal Required Fab',
+            'Excess Qty'
+        ];
+        const summaryDataRows = baseStockFabricFilteredData.map(r => [
+            r.fabric_name,
+            r.color || '',
+            r.dia ? Number(r.dia) : '',
+            Number(r.fabric_req || 0),
+            Number(r.fabric_stock || 0),
+            Number(r.fabric_wip || 0),
+            Number(r.bal_required_fab || 0),
+            Number(r.excess_qty || 0)
+        ]);
+        const summarySheetData = [summaryHeaders, ...summaryDataRows];
+        const summaryWorksheet = XLSX.utils.aoa_to_sheet(summarySheetData);
+
+        const summaryWidths = [];
+        for (let c = 0; c < summaryHeaders.length; c++) {
+            let max_len = summaryHeaders[c].length;
+            for (let r = 0; r < summarySheetData.length; r++) {
+                const val = summarySheetData[r][c];
+                if (val !== null && val !== undefined) {
+                    const len = val.toString().length;
+                    if (len > max_len) max_len = len;
+                }
+            }
+            summaryWidths.push({ wch: Math.min(50, Math.max(10, max_len + 2)) });
+        }
+        summaryWorksheet['!cols'] = summaryWidths;
+
+        const summaryRange = XLSX.utils.decode_range(summaryWorksheet['!ref']);
+        summaryWorksheet['!autofilter'] = { ref: XLSX.utils.encode_range(summaryRange) };
+        summaryWorksheet['!views'] = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activePane: 'bottomLeft' }];
+
+        const detailsHeaders = [
+            'Source Type',
+            'Product / Common Production Name',
+            'Brand',
+            'Category',
+            'Color',
+            'Size',
+            'Fabric Name',
+            'Dia',
+            'Bal Req Qty',
+            'Fabric Consumption',
+            'Fabric Requirement'
+        ];
+        const detailsDataRows = filteredDetails.map(d => [
+            d.source_type,
+            d.name,
+            d.brand || '',
+            d.category || '',
+            d.color || '',
+            d.size,
+            d.fabric_name,
+            d.dia ? Number(d.dia) : '',
+            Number(d.bal_req_qty || 0),
+            Number(d.fabric_consumption || 0),
+            Number(d.fabric_requirement || 0)
+        ]);
+        const detailsSheetData = [detailsHeaders, ...detailsDataRows];
+        const detailsWorksheet = XLSX.utils.aoa_to_sheet(detailsSheetData);
+
+        const detailsWidths = [];
+        for (let c = 0; c < detailsHeaders.length; c++) {
+            let max_len = detailsHeaders[c].length;
+            for (let r = 0; r < detailsSheetData.length; r++) {
+                const val = detailsSheetData[r][c];
+                if (val !== null && val !== undefined) {
+                    const len = val.toString().length;
+                    if (len > max_len) max_len = len;
+                }
+            }
+            detailsWidths.push({ wch: Math.min(50, Math.max(10, max_len + 2)) });
+        }
+        detailsWorksheet['!cols'] = detailsWidths;
+
+        const detailsRange = XLSX.utils.decode_range(detailsWorksheet['!ref']);
+        detailsWorksheet['!autofilter'] = { ref: XLSX.utils.encode_range(detailsRange) };
+        detailsWorksheet['!views'] = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activePane: 'bottomLeft' }];
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Fabric Requirement Summary');
+        XLSX.utils.book_append_sheet(workbook, detailsWorksheet, 'Fabric Requirement Details');
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const filename = `Base_Stock_Fabric_Requirement_Report_${todayStr}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+    } catch (err) {
+        if (loader) loader.classList.add('hidden');
+        showToast('Error', 'Connection error during Excel export', 'error');
+        console.error(err);
+    }
+}
+
+async function toggleBaseStockCommonGroupMembers(fromDate, toDate, common_production_name, size, color, triggerBtn, globalColorCode) {
+    const parentRow = triggerBtn.closest('tr');
+    const displayColorForId = (globalColorCode || color).replace(/\s+/g, '_');
+    const childRowId = `base-child-breakdown-${fromDate}-${toDate}-${common_production_name.replace(/\s+/g, '_')}-${size}-${displayColorForId}`;
+    const existingChild = document.getElementById(childRowId);
+
+    if (existingChild) {
+        const icon = triggerBtn.querySelector('i');
+        if (existingChild.classList.contains('hidden')) {
+            existingChild.classList.remove('hidden');
+            if (icon) {
+                icon.className = 'fa-solid fa-chevron-down';
+            }
+        } else {
+            existingChild.classList.add('hidden');
+            if (icon) {
+                icon.className = 'fa-solid fa-chevron-right';
+            }
+        }
+        return;
+    }
+
+    triggerBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    const planVal = document.getElementById('base-stock-plan-select')?.value || '';
+    const [plan_name, financial_year] = planVal.split('|');
+    const version = document.getElementById('base-stock-version-select')?.value || '';
+
+    const url = `/api/base-stock/members?plan_name=${encodeURIComponent(plan_name)}&financial_year=${encodeURIComponent(financial_year)}&version=${encodeURIComponent(version)}&from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}&common_production_name=${encodeURIComponent(common_production_name)}&size=${encodeURIComponent(size)}&consider_fg=${baseStockConsider.fg}&consider_wip=${baseStockConsider.wip}&consider_pending=${baseStockConsider.pending}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.success) {
+            showToast('Error', data.message || 'Failed to load breakdown details', 'error');
+            triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+            return;
+        }
+
+        triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+
+        const subTr = document.createElement('tr');
+        subTr.id = childRowId;
+        subTr.className = 'common-group-expanded-row';
+        subTr.style.background = 'rgba(255, 255, 255, 0.01)';
+
+        const filteredMembers = (data.members || []).filter(m => {
+            if (globalColorCode) {
+                return (m.global_color_code || '').toLowerCase().trim() === globalColorCode.toLowerCase().trim();
+            }
+            return m.color.toLowerCase().trim() === color.toLowerCase().trim();
+        });
+
+        let subRowsHtml = '';
+        filteredMembers.forEach(m => {
+            const colorCatSuffix = m.color_category ? ` (${m.color_category})` : '';
+            subRowsHtml += `
+                <tr>
+                    <td style="padding: 6px 12px; font-weight: 500;">${m.product}</td>
+                    <td style="padding: 6px 12px;">${m.color}${colorCatSuffix}</td>
+                    <td style="padding: 6px 12px;"><span class="badge badge-outline">${m.size}</span></td>
+                    <td class="text-right" style="padding: 6px 12px;">${Number(m.calculated_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td class="text-right" style="padding: 6px 12px;">${Number(m.finished_goods_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td class="text-right" style="padding: 6px 12px;">${Number(m.production_wip_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td class="text-right" style="padding: 6px 12px;">${Number(m.pending_production_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td class="text-right" style="padding: 6px 12px; font-weight: 600; color: var(--accent-blue);">${Number(m.bal_required_qty).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                </tr>
+            `;
+        });
+
+        const subColspan = baseStockMainTab === 'fg' ? (getFgBaseStockColumns().length - 1) : 13;
+
+        subTr.innerHTML = `
+            <td></td>
+            <td colspan="${subColspan}" style="padding: 12px 20px 20px 20px;">
+                <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-card); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <div style="padding: 8px 12px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--accent-green); display:flex; align-items:center; gap: 6px;">
+                            <i class="fa-solid fa-layer-group"></i> MEMBER BREAKDOWN: ${common_production_name} (Color: ${color}, Size: ${size})
+                        </span>
+                        <span style="font-size: 11px; color: var(--text-secondary); font-weight:500;">
+                            *SKU Bal Qty is computed using standalone logic
+                        </span>
+                    </div>
+                    <table class="spreadsheet-table" style="width: 100%; border-collapse: collapse; margin: 0; border: none;">
+                        <thead style="background: rgba(255,255,255,0.01);">
+                            <tr>
+                                <th>Product SKU</th>
+                                <th>Color</th>
+                                <th>Size</th>
+                                <th class="text-right">Req Qty</th>
+                                <th class="text-right">FG Stock</th>
+                                <th class="text-right">WIP Qty</th>
+                                <th class="text-right">Pending Qty</th>
+                                <th class="text-right">SKU Bal Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${subRowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+        `;
+
+        parentRow.after(subTr);
+    } catch (err) {
+        triggerBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+        showToast('Error', 'Connection error loading member breakdown', 'error');
+        console.error(err);
+    }
+}
 

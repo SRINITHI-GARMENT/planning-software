@@ -3710,3 +3710,182 @@ select option {
 .excel-planning-container .excel-scode-checkbox-item:hover {
     background: rgba(255, 255, 255, 0.06);
 }
+
+.excel-planning-container .excel-scode-checkbox-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* =====================================================================
+   BASE STOCK PLANNING MODULE (ISOLATED STYLES)
+   ===================================================================== */
+.base-stock-subtab-pane {
+    animation: fadeIn 0.15s ease-in-out;
+}
+
+.base-stock-subtotal-row td {
+    background: rgba(59, 130, 246, 0.08) !important;
+    font-weight: 700 !important;
+    border-top: 1px solid rgba(59, 130, 246, 0.3) !important;
+    border-bottom: 2px solid rgba(59, 130, 246, 0.3) !important;
+}
+
+.base-stock-common-header-row td {
+    background: rgba(255, 255, 255, 0.03) !important;
+    font-weight: 600 !important;
+}
+
+.base-stock-common-member-row td {
+    background: transparent !important;
+}
+
+.base-stock-standalone-row:hover,
+.base-stock-common-member-row:hover,
+.base-stock-common-header-row:hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.base-stock-checklist-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+/* ============================================================= */
+/* FINISHED GOODS BASE STOCK - TAB 3: TABLE VIEW MATRIX STYLES   */
+/* ============================================================= */
+
+.base-stock-table-view-matrix {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.base-stock-table-view-matrix th,
+.base-stock-table-view-matrix td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    white-space: nowrap;
+}
+
+.base-stock-table-view-matrix th {
+    position: sticky;
+    top: 0;
+    background: #1a2030;
+    z-index: 10;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* Sticky First Column: Color */
+.base-stock-table-view-matrix .fg-matrix-col-color {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #161b28;
+    min-width: 160px;
+    max-width: 260px;
+    border-right: 2px solid var(--border-color);
+}
+
+.base-stock-table-view-matrix th.fg-matrix-col-color {
+    z-index: 20;
+    background: #1a2030;
+}
+
+.base-stock-table-view-matrix tbody tr:hover td {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.base-stock-table-view-matrix tbody tr:hover td.fg-matrix-col-color {
+    background-color: #1c2333;
+}
+
+/* Sticky Footer: Total Row */
+.base-stock-table-view-matrix tfoot tr {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: #1a2030;
+}
+
+.base-stock-table-view-matrix tfoot td {
+    border-top: 2px solid var(--border-color);
+    border-bottom: none;
+    background: #1a2030;
+    font-weight: 700;
+}
+
+.base-stock-table-view-matrix tfoot td.fg-matrix-col-color {
+    z-index: 20;
+    background: #1a2030;
+}
+
+.base-stock-table-view-matrix .fg-matrix-col-total {
+    border-left: 2px solid var(--border-color);
+}
+
+.fg-table-filter-btn.active-filter {
+    background: rgba(59, 130, 246, 0.15) !important;
+    color: var(--accent-blue) !important;
+    border-color: var(--accent-blue) !important;
+}
+
+/* Product/Group Section Styling in Tab 3 */
+.fg-product-section {
+    background: var(--bg-card, #202433);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.fg-product-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #181d2a;
+    border-bottom: 2px solid var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.fg-product-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary, #ffffff);
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fg-path-badge-sa {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(107, 114, 128, 0.15);
+    color: var(--text-secondary, #9ca3af);
+    border: 1px solid rgba(107, 114, 128, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fg-path-badge-cp {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-green, #10b981);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+
