@@ -170,7 +170,7 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
 
     # 2. Product Master and Common Production Master configurations
     cur.execute("""
-        SELECT LOWER(TRIM(p.product_name)), p.id, p.production_type, b.brand_name, pd.product_description,
+        SELECT p.product_name, LOWER(TRIM(p.product_name)), p.id, p.production_type, b.brand_name, pd.product_description,
                cpm.id, cpm.common_production_name,
                f.id, f.fabric_name, f.gsm, p.fabric_consumption, cpm.fabric_consumption, cpm.common_dia
         FROM product_master p
@@ -183,22 +183,23 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
     
     product_config = {}
     active_common_groups = set()
+    active_cp_ids = set()
+    common_group_members_map = {} # cp_id -> list of prod_keys
+    all_active_products = list(active_products)
+
     for r in cur.fetchall():
-        prod_key = r[0]
-        prod_id = r[1]
-        prod_type = r[2] or 'Stand Alone'
-        brand = r[3] or '-'
-        category = r[4] or '-'
-        cp_id = r[5]
-        common_name = r[6]
-        fab_id = r[7]
-        fab_name = r[8]
-        fab_gsm = int(r[9]) if r[9] is not None else 0
-        p_consumption = float(r[10]) if r[10] is not None else 0.0
-        cp_consumption = float(r[11]) if r[11] is not None else 0.0
-        cp_common_dia = float(r[12]) if r[12] is not None else 0.0
+        orig_prod_name, prod_key, prod_id, prod_type, brand, category, cp_id, common_name, fab_id, fab_name, fab_gsm, p_consumption, cp_consumption, cp_common_dia = r
+        prod_type = prod_type or 'Stand Alone'
+        brand = brand or '-'
+        category = category or '-'
+        fab_name = fab_name or '-'
+        fab_gsm = int(fab_gsm) if fab_gsm is not None else 0
+        p_consumption = float(p_consumption) if p_consumption is not None else 0.0
+        cp_consumption = float(cp_consumption) if cp_consumption is not None else 0.0
+        cp_common_dia = float(cp_common_dia) if cp_common_dia is not None else 0.0
         
         product_config[prod_key] = {
+            'product_name': orig_prod_name,
             'product_id': prod_id,
             'production_type': prod_type,
             'brand': brand,
@@ -214,6 +215,50 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
         }
         if prod_type == 'Common' and common_name:
             active_common_groups.add(common_name.lower().strip())
+            if cp_id:
+                active_cp_ids.add(cp_id)
+                if cp_id not in common_group_members_map:
+                    common_group_members_map[cp_id] = []
+                if prod_key not in common_group_members_map[cp_id]:
+                    common_group_members_map[cp_id].append(prod_key)
+
+    # Fetch all other active member products in the active Common Production groups so their FG stock & WIP can be utilized
+    if active_cp_ids:
+        cur.execute("""
+            SELECT p.product_name, LOWER(TRIM(p.product_name)), p.id, p.production_type, b.brand_name, pd.product_description,
+                   cpm.id, cpm.common_production_name,
+                   f.id, f.fabric_name, f.gsm, p.fabric_consumption, cpm.fabric_consumption, cpm.common_dia
+            FROM product_master p
+            LEFT JOIN brand_master b ON p.brand_id = b.id
+            LEFT JOIN product_description_master pd ON p.product_description_id = pd.id
+            LEFT JOIN common_production_master cpm ON p.common_production_id = cpm.id
+            LEFT JOIN fabric_master f ON COALESCE(p.fabric_id, cpm.fabric_id) = f.id
+            WHERE p.common_production_id = ANY(%s) AND p.status = 'Active';
+        """, (list(active_cp_ids),))
+        for r in cur.fetchall():
+            orig_prod_name, prod_key, prod_id, prod_type, brand, category, cp_id, common_name, fab_id, fab_name, fab_gsm, p_consumption, cp_consumption, cp_common_dia = r
+            if cp_id not in common_group_members_map:
+                common_group_members_map[cp_id] = []
+            if prod_key not in common_group_members_map[cp_id]:
+                common_group_members_map[cp_id].append(prod_key)
+            if prod_key not in product_config:
+                product_config[prod_key] = {
+                    'product_name': orig_prod_name,
+                    'product_id': prod_id,
+                    'production_type': prod_type or 'Common',
+                    'brand': brand or '-',
+                    'category': category or '-',
+                    'common_production_id': cp_id,
+                    'common_production_name': common_name,
+                    'fabric_id': fab_id,
+                    'fabric_name': fab_name or '-',
+                    'gsm': int(fab_gsm) if fab_gsm is not None else 0,
+                    'fabric_consumption': float(p_consumption) if p_consumption is not None else 0.0,
+                    'cp_fabric_consumption': float(cp_consumption) if cp_consumption is not None else 0.0,
+                    'cp_common_dia': float(cp_common_dia) if cp_common_dia is not None else 0.0
+                }
+            if prod_key not in all_active_products:
+                all_active_products.append(prod_key)
 
     # Size Master ID mapping
     cur.execute("SELECT LOWER(TRIM(size)), id FROM size_master;")
@@ -273,7 +318,7 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
           AND LOWER(TRIM(size)) = ANY(%s)
           AND validation_status = 'VALID'
         GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size));
-    """, (active_products, active_sizes))
+    """, (all_active_products, active_sizes))
     fg_map = {}
     for r in cur.fetchall():
         prod_name_lower = r[0]
@@ -299,7 +344,7 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
           AND LOWER(TRIM(size)) = ANY(%s)
           AND validation_status = 'VALID'
         GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size));
-    """, (active_products, active_sizes))
+    """, (all_active_products, active_sizes))
     wip_sku_map = {}
     for r in cur.fetchall():
         prod_name_lower = r[0]
@@ -441,6 +486,60 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
                 'members': []
             })
 
+    # Attach common member products with available stock/WIP to active common demand groups
+    for group_key, g_data in common_groups.items():
+        c_name_lower, prim_col_lower, sz_lower = group_key
+        cp_id = None
+        for m in g_data['members']:
+            m_conf = product_config.get(m['product_name'].lower().strip(), {})
+            if m_conf.get('common_production_id'):
+                cp_id = m_conf['common_production_id']
+                break
+        
+        if not cp_id:
+            continue
+            
+        existing_member_prods = set(m['product_name'].lower().strip() for m in g_data['members'])
+        all_cp_members = common_group_members_map.get(cp_id, [])
+        g_code = display_to_code.get(prim_col_lower)
+        
+        for m_prod_key in all_cp_members:
+            if m_prod_key in existing_member_prods:
+                continue
+            
+            m_conf = product_config.get(m_prod_key, {})
+            m_cat = product_color_cat.get(m_prod_key, 'Primary')
+            m_color = cat_code_to_display.get((m_cat, g_code)) if g_code else None
+            if not m_color:
+                m_color = fallback_display.get(g_code, g_data['primary_color']) if g_code else g_data['primary_color']
+            
+            m_sku_lookup_key = (m_prod_key, m_color.lower().strip(), sz_lower)
+            m_fg_raw = fg_map.get(m_sku_lookup_key, 0.0)
+            m_wip_raw = wip_sku_map.get(m_sku_lookup_key, 0.0)
+            
+            if m_fg_raw > 0 or m_wip_raw > 0:
+                p_id = m_conf.get('product_id')
+                sz_id = size_to_id.get(sz_lower)
+                dia = pdm_map.get((p_id, sz_id)) or pdm_fallback.get(p_id) or g_data['dia']
+                m_consumption = m_conf.get('fabric_consumption') or g_data['fabric_consumption']
+                actual_prod_name = m_conf.get('product_name') or m_prod_key.upper()
+                
+                g_data['members'].append({
+                    'brand': m_conf.get('brand', '-'),
+                    'category': m_conf.get('category', '-'),
+                    'product_name': actual_prod_name,
+                    'color': m_color,
+                    'size': g_data['size'],
+                    'req_qty_raw': 0.0,
+                    'fg_raw': m_fg_raw,
+                    'wip_raw': m_wip_raw,
+                    'already_planned_raw': 0.0,
+                    'fabric_name': m_conf.get('fabric_name') or g_data['fabric_name'],
+                    'gsm': m_conf.get('gsm') or g_data['gsm'],
+                    'dia': dia,
+                    'fabric_consumption': m_consumption
+                })
+
     # Common Production Groups assembly
     common_lines = []
     for g_key, g_data in common_groups.items():
@@ -462,9 +561,19 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
         common_fab_req_kg = common_net_pending * cp_consumption
 
         # Member records with their individual net pending
+        rem_group_fg = total_fg_raw
+        rem_group_wip = total_wip_raw
         member_records = []
         for m in members:
-            m_net_pending = max(0.0, m['req_qty_raw'] - m['fg_raw'] - m['wip_raw'] - m['already_planned_raw'])
+            m_req = m['req_qty_raw']
+            m_fg_used = min(m_req, rem_group_fg)
+            rem_after_fg = m_req - m_fg_used
+            rem_group_fg = max(0.0, rem_group_fg - m_fg_used)
+
+            m_wip_used = min(rem_after_fg, rem_group_wip)
+            m_net_pending = max(0.0, rem_after_fg - m_wip_used)
+            rem_group_wip = max(0.0, rem_group_wip - m_wip_used)
+
             m_fab_req = m_net_pending * m['fabric_consumption']
             member_records.append({
                 'item_type': 'Common Member',
