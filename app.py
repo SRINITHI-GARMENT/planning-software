@@ -11357,14 +11357,17 @@ def save_bulk_feed_data():
         if conn:
             release_db_connection(conn)
 
-# =====================================================================
-# ERP AUTO SYNC & BULK FEED APIS (CONNECTED TO AUTO DOWNLOAD ENGINE)
-# =====================================================================
-from erp_auto_sync_service import erp_sync_service
+try:
+    from erp_auto_sync_service import erp_sync_service
+except Exception as _sync_import_err:
+    logging.warning(f"Could not import erp_auto_sync_service: {_sync_import_err}")
+    erp_sync_service = None
 
 @app.route('/api/stock-wip/auto-feed/config', methods=['GET'])
 @login_required
 def get_auto_feed_config():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         cfg = erp_sync_service.load_source_config()
         return jsonify({'success': True, 'config': cfg})
@@ -11374,6 +11377,8 @@ def get_auto_feed_config():
 @app.route('/api/stock-wip/auto-feed/start', methods=['POST'])
 @login_required
 def start_auto_feed_sync():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     data = request.json or {}
     mode = data.get('mode', 'review') # 'review' (Option A) or 'auto_save' (Option B)
     feed_strategy = str(data.get('feed_strategy', 'replace')).lower().strip() # 'replace' or 'append'
@@ -11393,17 +11398,23 @@ def start_auto_feed_sync():
 @app.route('/api/stock-wip/auto-feed/status', methods=['GET'])
 @login_required
 def get_auto_feed_status():
+    if not erp_sync_service:
+        return jsonify({'success': True, 'state': {'status': 'idle', 'message': 'ERP Auto-Sync service unavailable'}})
     return jsonify({'success': True, 'state': erp_sync_service.get_status()})
 
 @app.route('/api/stock-wip/auto-feed/stop', methods=['POST'])
 @login_required
 def stop_auto_feed_sync():
+    if not erp_sync_service:
+        return jsonify({'success': True, 'message': 'Cancellation requested.'})
     erp_sync_service.stop()
     return jsonify({'success': True, 'message': 'Cancellation requested.'})
 
 @app.route('/api/stock-wip/auto-feed/result', methods=['GET'])
 @login_required
 def get_auto_feed_result():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     state = erp_sync_service.get_status()
     if state.get('status') != 'completed':
         return jsonify({'success': False, 'message': 'Sync is not completed yet.'}), 400
@@ -11428,6 +11439,8 @@ def get_auto_feed_result():
 @app.route('/api/stock-wip/auto-feed/quick-load', methods=['POST'])
 @login_required
 def quick_load_auto_feed():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     data = request.json or {}
     cfg = erp_sync_service.load_source_config()
     default_path = (cfg.get('existing_mainout') or {}).get('path')
@@ -11452,6 +11465,8 @@ def quick_load_auto_feed():
 @app.route('/api/stock-wip/auto-feed/filters', methods=['GET'])
 @login_required
 def get_auto_feed_filters():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         cfg = erp_sync_service.get_filter_config()
         return jsonify({'success': True, 'filter_config': cfg})
@@ -11461,6 +11476,8 @@ def get_auto_feed_filters():
 @app.route('/api/stock-wip/auto-feed/filters', methods=['POST'])
 @login_required
 def save_auto_feed_filters():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     data = request.json or {}
     filter_config = data.get('filter_config')
     if not filter_config:
@@ -11474,6 +11491,8 @@ def save_auto_feed_filters():
 @app.route('/api/stock-wip/auto-feed/fabric-items', methods=['GET'])
 @login_required
 def get_auto_feed_fabric_items():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         items = erp_sync_service.get_fabric_list()
         return jsonify({'success': True, 'items': items})
@@ -11483,6 +11502,8 @@ def get_auto_feed_fabric_items():
 @app.route('/api/stock-wip/auto-feed/fabric-items', methods=['POST'])
 @login_required
 def save_auto_feed_fabric_items():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     data = request.json or {}
     items = data.get('items')
     if not isinstance(items, list):
@@ -11496,6 +11517,8 @@ def save_auto_feed_fabric_items():
 @app.route('/api/stock-wip/auto-feed/fabric-items/reset', methods=['POST'])
 @login_required
 def reset_auto_feed_fabric_items():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         items = erp_sync_service.reset_fabric_list()
         return jsonify({'success': True, 'message': 'Fabric list reset to defaults.', 'items': items})
@@ -11505,6 +11528,8 @@ def reset_auto_feed_fabric_items():
 @app.route('/api/stock-wip/auto-feed/wip-groups', methods=['GET'])
 @login_required
 def get_auto_feed_wip_groups():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         items = erp_sync_service.get_wip_list()
         return jsonify({'success': True, 'items': items})
@@ -11514,6 +11539,8 @@ def get_auto_feed_wip_groups():
 @app.route('/api/stock-wip/auto-feed/wip-groups', methods=['POST'])
 @login_required
 def save_auto_feed_wip_groups():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     data = request.json or {}
     items = data.get('items')
     if not isinstance(items, list):
@@ -11527,6 +11554,8 @@ def save_auto_feed_wip_groups():
 @app.route('/api/stock-wip/auto-feed/wip-groups/reset', methods=['POST'])
 @login_required
 def reset_auto_feed_wip_groups():
+    if not erp_sync_service:
+        return jsonify({'success': False, 'message': 'ERP Auto-Sync service is not available.'}), 503
     try:
         items = erp_sync_service.reset_wip_list()
         return jsonify({'success': True, 'message': 'Production WIP groupings reset to defaults.', 'items': items})

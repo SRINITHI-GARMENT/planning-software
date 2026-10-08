@@ -5,7 +5,6 @@ import time
 import datetime
 import threading
 from pathlib import Path
-import pandas as pd
 import openpyxl
 
 AUTO_DOWNLOAD_DIR = Path(r"C:\Users\santhosh\Documents\old\auto download")
