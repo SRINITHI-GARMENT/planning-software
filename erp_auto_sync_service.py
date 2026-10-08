@@ -7,7 +7,10 @@ import threading
 from pathlib import Path
 import openpyxl
 
-AUTO_DOWNLOAD_DIR = Path(r"C:\Users\santhosh\Documents\old\auto download")
+_LOCAL_TOOL_DIR = Path(__file__).parent.resolve() / "DATSerp_Cloud_Sync_Tool"
+_FALLBACK_DIR = Path(r"C:\Users\santhosh\Documents\old\auto download")
+AUTO_DOWNLOAD_DIR = _LOCAL_TOOL_DIR if _LOCAL_TOOL_DIR.exists() else _FALLBACK_DIR
+
 LOCAL_FILTER_CONFIG_FILE = Path(__file__).parent.resolve() / "config" / "mainout_filter_config.json"
 SOURCE_FILTER_CONFIG_FILE = AUTO_DOWNLOAD_DIR / "mainout_filter_config.json"
 

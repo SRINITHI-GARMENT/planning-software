@@ -1,0 +1,224 @@
+{
+  "enabled": true,
+  "filters": {
+    "Fabric Stock": [],
+    "Fabric WIP": [],
+    "Production WIP": [
+      {
+        "name": "YASMIN PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "YASMIN JNR PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "SALMA PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "# PALAZZO PRODUCTION NEW",
+        "enabled": true
+      },
+      {
+        "name": "#COMMON ANKLEFIT PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "#COMMON FULL LENGTH PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "#SHIMMER ANKLE PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "#SHIMMER CHURDITHAR-FIT PRODUCTION",
+        "enabled": true
+      },
+      {
+        "name": "COMMON COTTON PATIALA PRODUCTION",
+        "enabled": true
+      }
+    ],
+    "Pending Orders": [],
+    "Finished Goods": [
+      {
+        "name": "#SEA-FLAT",
+        "enabled": true
+      },
+      {
+        "name": "#OCEAN",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT053 - NEW",
+        "enabled": true
+      },
+      {
+        "name": "#RIVER JNR",
+        "enabled": true
+      },
+      {
+        "name": "#RIVER-FLAT",
+        "enabled": true
+      },
+      {
+        "name": "#OCEAN JNR",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT049 - METTALIC STRAIGHT PANT",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT052 - KNITTED KURTI PANT",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT060 - DENIM JEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#BLISS",
+        "enabled": true
+      },
+      {
+        "name": "#ELIX",
+        "enabled": true
+      },
+      {
+        "name": "#BELLA NEW",
+        "enabled": true
+      },
+      {
+        "name": "#R125 - SHIMMER ANKLE LEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#SALMA WHITE",
+        "enabled": true
+      },
+      {
+        "name": "#SALMA",
+        "enabled": true
+      },
+      {
+        "name": "#JULIET F/S WHITE",
+        "enabled": true
+      },
+      {
+        "name": "#JULIET F/S",
+        "enabled": true
+      },
+      {
+        "name": "#JULIET H/S WHITE",
+        "enabled": true
+      },
+      {
+        "name": "#JULIET H/S",
+        "enabled": true
+      },
+      {
+        "name": "#YASMIN-WHITE",
+        "enabled": true
+      },
+      {
+        "name": "#YASMIN",
+        "enabled": true
+      },
+      {
+        "name": "#NILE",
+        "enabled": true
+      },
+      {
+        "name": "#CONGO",
+        "enabled": true
+      },
+      {
+        "name": "#MISSI",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT043-RAYON KURTI PANT NEW",
+        "enabled": true
+      },
+      {
+        "name": "#B503-PATIALA",
+        "enabled": true
+      },
+      {
+        "name": "#F312-PATIALA",
+        "enabled": true
+      },
+      {
+        "name": "#R114-ANKLE LEGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#R113 LYCRA LEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#R118 - VISCOSE LEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#R119 - RICH PREMIUM-ANKLE",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT058 - CLUOTTES",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT008",
+        "enabled": true
+      },
+      {
+        "name": "#DOVE JNR",
+        "enabled": true
+      },
+      {
+        "name": "IFWBT066 - SHIMMER SHAPWEAR",
+        "enabled": true
+      },
+      {
+        "name": "#ROOX-NEW",
+        "enabled": true
+      },
+      {
+        "name": "#BEE",
+        "enabled": true
+      },
+      {
+        "name": "#DR002 - COTTON ANKLE LEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#DOVE",
+        "enabled": true
+      },
+      {
+        "name": "#DR001 - COTTON FL LEGGINGS",
+        "enabled": true
+      },
+      {
+        "name": "#IFWBT034(DELIGHT)",
+        "enabled": true
+      },
+      {
+        "name": "#GLAD",
+        "enabled": true
+      },
+      {
+        "name": "#RITA",
+        "enabled": true
+      },
+      {
+        "name": "#RITA JNR",
+        "enabled": true
+      }
+    ]
+  }
+}
