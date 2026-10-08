@@ -364,6 +364,14 @@ class ErpAutoSyncService:
             self._log(f"STARTING ERP AUTO SYNC (Mode: {'Option A: Review' if mode == 'review' else 'Option B: Auto-Save'} | Feed Strategy: {'Replace (Delete Old)' if feed_strategy == 'replace' else 'Append (Keep Old)'})")
             self._log("=" * 60)
 
+            # Verify if local automation engines exist
+            if not AUTO_DOWNLOAD_DIR.exists():
+                raise FileNotFoundError(
+                    f"Auto Download folder not found at '{AUTO_DOWNLOAD_DIR}'. "
+                    "DATSerp browser automation runs locally on your PC via Selenium/Chrome. "
+                    "Please open http://127.0.0.1:5050 on your local computer to run ERP Auto Sync."
+                )
+
             # Ensure auto download directory is in sys.path
             source_dir_str = str(AUTO_DOWNLOAD_DIR.resolve())
             if source_dir_str not in sys.path:
@@ -380,13 +388,16 @@ class ErpAutoSyncService:
                             k, v = line.split("=", 1)
                             env_vars[k.strip()] = v.strip().strip('"').strip("'")
 
-            user = env_vars.get("ERP_USERNAME")
-            pwd = env_vars.get("ERP_PASSWORD")
-            raw_base_dir = download_dir or env_vars.get("DOWNLOAD_DIR", r"C:\ERP_DOWNLOADS")
+            user = env_vars.get("ERP_USERNAME") or os.environ.get("ERP_USERNAME")
+            pwd = env_vars.get("ERP_PASSWORD") or os.environ.get("ERP_PASSWORD")
+            raw_base_dir = download_dir or env_vars.get("DOWNLOAD_DIR") or os.environ.get("DOWNLOAD_DIR", r"C:\ERP_DOWNLOADS")
             base_dir = str(raw_base_dir).strip().strip('"').strip("'").strip()
 
             if not user or not pwd:
-                raise ValueError("ERP_USERNAME or ERP_PASSWORD missing in auto download .env configuration.")
+                raise ValueError(
+                    f"ERP_USERNAME or ERP_PASSWORD missing in '{env_file}'. "
+                    "Please ensure credentials are configured in your local auto download .env file."
+                )
 
             Path(base_dir).mkdir(parents=True, exist_ok=True)
             self._log(f"Destination Base Folder: {base_dir}")
