@@ -16876,10 +16876,14 @@ async function saveBulkFeedGridData() {
 
     showLoader(true, `Executing atomic bulk save of ${totalValid.toLocaleString()} valid records...`);
     try {
+        const feedStrategy = document.querySelector('input[name="grid_feed_strategy"]:checked')?.value || autoErpSyncState?.feedStrategy || 'replace';
         const response = await fetch('/api/planning-stock/bulk-feed/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sheets: bulkFeedState.sheets })
+            body: JSON.stringify({ 
+                sheets: bulkFeedState.sheets,
+                feed_strategy: feedStrategy
+            })
         });
 
         const result = await response.json();
@@ -16887,7 +16891,8 @@ async function saveBulkFeedGridData() {
             closeStockWipBulkFeedModal();
 
             const inserted = result.inserted_counts || {};
-            const summaryMsg = `Fabric Stock: ${inserted['Fabric Stock'] || 0}, Fabric WIP: ${inserted['Fabric WIP'] || 0}, Production WIP: ${inserted['Production WIP'] || 0}, Pending Orders: ${inserted['Pending Orders'] || 0}, Finished Goods: ${inserted['Finished Goods'] || 0}. (Total: ${result.total_inserted || 0})`;
+            const stratLabel = (result.feed_strategy || feedStrategy) === 'replace' ? 'Replace Mode (Old data wiped)' : 'Append Mode (Old data kept)';
+            const summaryMsg = `[${stratLabel}] Fabric Stock: ${inserted['Fabric Stock'] || 0}, Fabric WIP: ${inserted['Fabric WIP'] || 0}, Production WIP: ${inserted['Production WIP'] || 0}, Pending Orders: ${inserted['Pending Orders'] || 0}, Finished Goods: ${inserted['Finished Goods'] || 0}. (Total: ${result.total_inserted || 0})`;
 
             showToast('Bulk Feed Completed', `Bulk Feed saved successfully! ${summaryMsg}`, 'success');
 
@@ -22917,4 +22922,1163 @@ async function toggleBaseStockCommonGroupMembers(fromDate, toDate, common_produc
         console.error(err);
     }
 }
+
+// =====================================================================
+// AUTO ERP SYNC & BULK FEED WORKFLOW (CONNECTED TO AUTO DOWNLOAD)
+// =====================================================================
+
+let autoErpSyncState = {
+    pollTimer: null,
+    isRunning: false,
+    selectedMode: 'review', // 'review' (Option A) or 'auto_save' (Option B)
+    feedStrategy: 'replace', // 'replace' (delete old & save new) or 'append' (keep old & add)
+    activeConfigTab: 'fabric', // 'fabric', 'wip', 'whitelist'
+    isConfigExpanded: true,
+    fabricItems: [],
+    wipGroups: [],
+    lastLogLength: 0
+};
+
+function onAutoSyncModeChange() {
+    const radioReview = document.getElementById('auto-sync-mode-review');
+    const cardReview = document.getElementById('card-mode-review');
+    const cardAutosave = document.getElementById('card-mode-autosave');
+    
+    if (radioReview && radioReview.checked) {
+        autoErpSyncState.selectedMode = 'review';
+        if (cardReview) {
+            cardReview.style.border = '2px solid var(--accent-blue)';
+            cardReview.style.background = 'rgba(59, 130, 246, 0.06)';
+        }
+        if (cardAutosave) {
+            cardAutosave.style.border = '1px solid var(--border-color)';
+            cardAutosave.style.background = 'rgba(255, 255, 255, 0.02)';
+        }
+    } else {
+        autoErpSyncState.selectedMode = 'auto_save';
+        if (cardReview) {
+            cardReview.style.border = '1px solid var(--border-color)';
+            cardReview.style.background = 'rgba(255, 255, 255, 0.02)';
+        }
+        if (cardAutosave) {
+            cardAutosave.style.border = '2px solid #10b981';
+            cardAutosave.style.background = 'rgba(16, 185, 129, 0.08)';
+        }
+    }
+}
+
+function onAutoFeedStrategyChange() {
+    const radioReplace = document.getElementById('auto-feed-strategy-replace');
+    const cardReplace = document.getElementById('card-feed-strategy-replace');
+    const cardAppend = document.getElementById('card-feed-strategy-append');
+    
+    const isReplace = radioReplace ? radioReplace.checked : true;
+    autoErpSyncState.feedStrategy = isReplace ? 'replace' : 'append';
+    
+    if (isReplace) {
+        if (cardReplace) {
+            cardReplace.style.border = '2px solid var(--accent-red)';
+            cardReplace.style.background = 'rgba(239, 68, 68, 0.06)';
+        }
+        if (cardAppend) {
+            cardAppend.style.border = '1px solid var(--border-color)';
+            cardAppend.style.background = 'rgba(255, 255, 255, 0.02)';
+        }
+    } else {
+        if (cardReplace) {
+            cardReplace.style.border = '1px solid var(--border-color)';
+            cardReplace.style.background = 'rgba(255, 255, 255, 0.02)';
+        }
+        if (cardAppend) {
+            cardAppend.style.border = '2px solid #10b981';
+            cardAppend.style.background = 'rgba(16, 185, 129, 0.08)';
+        }
+    }
+
+    // Sync to Bulk Feed Grid strategy radio if present
+    const gridRad = document.getElementById(isReplace ? 'grid-strategy-replace' : 'grid-strategy-append');
+    if (gridRad) gridRad.checked = true;
+}
+
+function switchAutoSyncConfigTab(tabName) {
+    autoErpSyncState.activeConfigTab = tabName;
+    const tabs = ['fabric', 'wip', 'whitelist'];
+    
+    tabs.forEach(t => {
+        const btn = document.getElementById(`tab-btn-cfg-${t}`);
+        const view = document.getElementById(`cfg-tab-view-${t}`);
+        if (t === tabName) {
+            if (btn) {
+                const color = t === 'fabric' ? 'var(--accent-blue)' : (t === 'wip' ? 'var(--accent-purple)' : '#10b981');
+                btn.style.background = color;
+                btn.style.borderColor = color;
+                btn.style.color = '#ffffff';
+                btn.style.fontWeight = '700';
+            }
+            if (view) view.classList.remove('hidden');
+        } else {
+            if (btn) {
+                btn.style.background = 'rgba(255, 255, 255, 0.05)';
+                btn.style.borderColor = 'var(--border-color)';
+                btn.style.color = 'var(--text-secondary)';
+                btn.style.fontWeight = '500';
+            }
+            if (view) view.classList.add('hidden');
+        }
+    });
+}
+
+function toggleConfigCenterExpand() {
+    autoErpSyncState.isConfigExpanded = !autoErpSyncState.isConfigExpanded;
+    const body = document.getElementById('cfg-center-body');
+    const lbl = document.getElementById('lbl-toggle-cfg-center');
+    const btn = document.getElementById('btn-toggle-cfg-center');
+    if (body) {
+        body.style.display = autoErpSyncState.isConfigExpanded ? 'flex' : 'none';
+    }
+    if (lbl) {
+        lbl.textContent = autoErpSyncState.isConfigExpanded ? 'Collapse' : 'Expand Settings';
+    }
+    if (btn) {
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.className = autoErpSyncState.isConfigExpanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down';
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// FABRIC STOCK SEARCH ITEMS CONTROLLER
+// ---------------------------------------------------------------------
+
+async function loadFabricItemsFromServer() {
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/fabric-items');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+            autoErpSyncState.fabricItems = data.items;
+            renderFabricItems();
+        }
+    } catch (err) {
+        console.error('Error loading fabric items:', err);
+    }
+}
+
+function renderFabricItems() {
+    const list = autoErpSyncState.fabricItems || [];
+    const container = document.getElementById('fabric-items-container');
+    const badge = document.getElementById('cfg-nav-badge-fabric');
+    const subtitle = document.getElementById('fabric-stock-subtitle');
+    const activeCount = list.filter(it => it.enabled !== false).length;
+
+    if (badge) badge.textContent = `${activeCount}`;
+    if (subtitle) {
+        subtitle.innerHTML = `<strong>${list.length} fabric types</strong> configured, <strong style="color: #10b981;">${activeCount} active</strong> for DATSerp download:`;
+    }
+    const countRibbon = document.getElementById('auto-sync-fabric-count');
+    if (countRibbon) countRibbon.textContent = activeCount;
+
+    if (!container) return;
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 12.5px;">
+                <i class="fa-solid fa-layer-group" style="font-size: 20px; opacity: 0.4; margin-bottom: 6px;"></i>
+                <div>No fabric items in download list. Click "Reset Defaults" or add one below.</div>
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    list.forEach((item, idx) => {
+        const isEnabled = item.enabled !== false;
+        const bgStyle = isEnabled ? 'background: rgba(255,255,255,0.03);' : 'background: rgba(255,255,255,0.01); opacity: 0.6;';
+        const fabName = item.fabric || '';
+        const unit = item.unit || 'Kgs';
+        const gsm = item.gsm ? `GSM: ${item.gsm}` : 'GSM: Any';
+
+        html += `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); ${bgStyle} transition: background 0.15s;">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                    <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFabricItem(${idx})"
+                        style="accent-color: #10b981; width: 16px; height: 16px; cursor: pointer;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${escapeHtml(fabName)}
+                    </span>
+                    <span style="font-size: 10.5px; padding: 2px 7px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 600;">
+                        ${escapeHtml(unit)}
+                    </span>
+                    <span style="font-size: 10.5px; padding: 2px 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-color);">
+                        ${escapeHtml(gsm)}
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 11px; font-weight: 600; color: ${isEnabled ? '#10b981' : 'var(--text-muted)'}; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid ${isEnabled ? 'fa-check' : 'fa-ban'}"></i> ${isEnabled ? 'Active' : 'Disabled'}
+                    </span>
+                    <button type="button" onclick="removeFabricItem(${idx})" title="Delete fabric item"
+                        style="background: none; border: none; color: var(--accent-red); cursor: pointer; padding: 4px 6px; border-radius: 4px; opacity: 0.8;"
+                        onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">
+                        <i class="fa-solid fa-trash-can" style="font-size: 13px;"></i>
+                    </button>
+                </div>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function toggleFabricItem(idx) {
+    if (autoErpSyncState.fabricItems[idx]) {
+        autoErpSyncState.fabricItems[idx].enabled = !autoErpSyncState.fabricItems[idx].enabled;
+        renderFabricItems();
+    }
+}
+
+function removeFabricItem(idx) {
+    if (autoErpSyncState.fabricItems[idx]) {
+        const name = autoErpSyncState.fabricItems[idx].fabric;
+        autoErpSyncState.fabricItems.splice(idx, 1);
+        renderFabricItems();
+        showToast('Removed', `Removed '${name}'. Click Save Fabric Items to persist.`, 'info');
+    }
+}
+
+function fabricItemsSelectAll() {
+    (autoErpSyncState.fabricItems || []).forEach(it => { it.enabled = true; });
+    renderFabricItems();
+}
+
+function fabricItemsDeselectAll() {
+    (autoErpSyncState.fabricItems || []).forEach(it => { it.enabled = false; });
+    renderFabricItems();
+}
+
+async function fabricItemsResetDefaults() {
+    if (!confirm('Reset Fabric Stock download list to defaults (12 standard fabric types)?')) return;
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/fabric-items/reset', { method: 'POST' });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+            autoErpSyncState.fabricItems = data.items;
+            renderFabricItems();
+            showToast('Reset Defaults', 'Fabric items reset to defaults.', 'success');
+        }
+    } catch (err) {
+        console.error('Error resetting fabric items:', err);
+    }
+}
+
+function fabricItemsAddNew() {
+    const inputName = document.getElementById('fabric-add-name');
+    const selectUnit = document.getElementById('fabric-add-unit');
+    const inputGsm = document.getElementById('fabric-add-gsm');
+    if (!inputName) return;
+
+    const fabName = (inputName.value || '').trim();
+    if (!fabName) {
+        showToast('Empty Fabric', 'Please enter a fabric name.', 'warning');
+        return;
+    }
+    const unit = selectUnit ? selectUnit.value : 'Kgs';
+    const gsm = (inputGsm?.value || '').trim();
+
+    const exists = autoErpSyncState.fabricItems.some(it => 
+        (it.fabric || '').toUpperCase() === fabName.toUpperCase() && (it.gsm || '') === gsm
+    );
+    if (exists) {
+        showToast('Duplicate Fabric', `'${fabName}' ${gsm ? `(GSM ${gsm})` : ''} already in list.`, 'warning');
+        return;
+    }
+
+    autoErpSyncState.fabricItems.push({
+        fabric: fabName,
+        unit: unit,
+        gsm: gsm,
+        enabled: true
+    });
+    inputName.value = '';
+    if (inputGsm) inputGsm.value = '';
+    renderFabricItems();
+    showToast('Fabric Added', `Added '${fabName}'. Click Save Fabric Items to persist.`, 'success');
+}
+
+async function saveFabricItemsToServer() {
+    const btn = document.getElementById('btn-save-fabric-items');
+    const oldText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/fabric-items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: autoErpSyncState.fabricItems })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Saved', 'Fabric Stock download items saved successfully!', 'success');
+        } else {
+            showToast('Save Error', data.message || 'Failed to save fabric list.', 'error');
+        }
+    } catch (err) {
+        console.error('Error saving fabric items:', err);
+        showToast('Error', 'Connection error saving fabric list.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldText;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// PRODUCTION WIP SEARCH GROUPS CONTROLLER
+// ---------------------------------------------------------------------
+
+async function loadWipGroupsFromServer() {
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/wip-groups');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+            autoErpSyncState.wipGroups = data.items;
+            renderWipGroups();
+        }
+    } catch (err) {
+        console.error('Error loading WIP groups:', err);
+    }
+}
+
+function renderWipGroups() {
+    const list = autoErpSyncState.wipGroups || [];
+    const container = document.getElementById('wip-groups-container');
+    const badge = document.getElementById('cfg-nav-badge-wip');
+    const subtitle = document.getElementById('wip-groups-subtitle');
+    const activeCount = list.filter(it => it.enabled !== false).length;
+
+    if (badge) badge.textContent = `${activeCount}`;
+    if (subtitle) {
+        subtitle.innerHTML = `<strong>${list.length} WIP groups</strong> configured, <strong style="color: #10b981;">${activeCount} active</strong> for DATSerp download:`;
+    }
+    const countRibbon = document.getElementById('auto-sync-wip-count');
+    if (countRibbon) countRibbon.textContent = activeCount;
+
+    if (!container) return;
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 12.5px;">
+                <i class="fa-solid fa-industry" style="font-size: 20px; opacity: 0.4; margin-bottom: 6px;"></i>
+                <div>No WIP groups in download list. Click "Reset Defaults" or add one below.</div>
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    list.forEach((item, idx) => {
+        const isEnabled = item.enabled !== false;
+        const bgStyle = isEnabled ? 'background: rgba(255,255,255,0.03);' : 'background: rgba(255,255,255,0.01); opacity: 0.6;';
+        const groupName = item.grouping || '';
+
+        html += `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); ${bgStyle} transition: background 0.15s;">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                    <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleWipGroup(${idx})"
+                        style="accent-color: #10b981; width: 16px; height: 16px; cursor: pointer;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${escapeHtml(groupName)}
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 11px; font-weight: 600; color: ${isEnabled ? '#10b981' : 'var(--text-muted)'}; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid ${isEnabled ? 'fa-check' : 'fa-ban'}"></i> ${isEnabled ? 'Active' : 'Disabled'}
+                    </span>
+                    <button type="button" onclick="removeWipGroup(${idx})" title="Delete WIP group"
+                        style="background: none; border: none; color: var(--accent-red); cursor: pointer; padding: 4px 6px; border-radius: 4px; opacity: 0.8;"
+                        onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">
+                        <i class="fa-solid fa-trash-can" style="font-size: 13px;"></i>
+                    </button>
+                </div>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function toggleWipGroup(idx) {
+    if (autoErpSyncState.wipGroups[idx]) {
+        autoErpSyncState.wipGroups[idx].enabled = !autoErpSyncState.wipGroups[idx].enabled;
+        renderWipGroups();
+    }
+}
+
+function removeWipGroup(idx) {
+    if (autoErpSyncState.wipGroups[idx]) {
+        const name = autoErpSyncState.wipGroups[idx].grouping;
+        autoErpSyncState.wipGroups.splice(idx, 1);
+        renderWipGroups();
+        showToast('Removed', `Removed '${name}'. Click Save WIP Groups to persist.`, 'info');
+    }
+}
+
+function wipGroupsSelectAll() {
+    (autoErpSyncState.wipGroups || []).forEach(it => { it.enabled = true; });
+    renderWipGroups();
+}
+
+function wipGroupsDeselectAll() {
+    (autoErpSyncState.wipGroups || []).forEach(it => { it.enabled = false; });
+    renderWipGroups();
+}
+
+async function wipGroupsResetDefaults() {
+    if (!confirm('Reset Production WIP grouping list to defaults (CUTTING, STITCHING, SNG - HALF FINISHING, IRONING & PACKING)?')) return;
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/wip-groups/reset', { method: 'POST' });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+            autoErpSyncState.wipGroups = data.items;
+            renderWipGroups();
+            showToast('Reset Defaults', 'Production WIP groups reset to defaults.', 'success');
+        }
+    } catch (err) {
+        console.error('Error resetting WIP groups:', err);
+    }
+}
+
+function wipGroupsAddNew() {
+    const input = document.getElementById('wip-add-name');
+    if (!input) return;
+    const name = (input.value || '').trim();
+    if (!name) {
+        showToast('Empty Group', 'Please enter a production grouping name.', 'warning');
+        return;
+    }
+
+    const exists = autoErpSyncState.wipGroups.some(it => 
+        (it.grouping || '').toUpperCase() === name.toUpperCase()
+    );
+    if (exists) {
+        showToast('Duplicate Group', `'${name}' already in list.`, 'warning');
+        return;
+    }
+
+    autoErpSyncState.wipGroups.push({
+        grouping: name,
+        enabled: true
+    });
+    input.value = '';
+    renderWipGroups();
+    showToast('Group Added', `Added '${name}'. Click Save WIP Groups to persist.`, 'success');
+}
+
+async function saveWipGroupsToServer() {
+    const btn = document.getElementById('btn-save-wip-groups');
+    const oldText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/wip-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: autoErpSyncState.wipGroups })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Saved', 'Production WIP groups saved successfully!', 'success');
+        } else {
+            showToast('Save Error', data.message || 'Failed to save WIP groups.', 'error');
+        }
+    } catch (err) {
+        console.error('Error saving WIP groups:', err);
+        showToast('Error', 'Connection error saving WIP groups.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldText;
+        }
+    }
+}
+
+function setAutoSyncTodayFolder() {
+    const d = new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const input = document.getElementById('auto-sync-dest-dir');
+    if (input) {
+        input.value = `G:\\${day}-${month}-${year}`;
+    }
+}
+
+async function openAutoErpSyncModal() {
+    const modal = document.getElementById('modal-stock-wip-auto-erp-sync');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    // Reset UI state if not already running
+    if (!autoErpSyncState.isRunning) {
+        const progSection = document.getElementById('auto-sync-progress-section');
+        if (progSection) progSection.classList.add('hidden');
+        const idleActions = document.getElementById('auto-sync-idle-actions');
+        if (idleActions) idleActions.classList.remove('hidden');
+    }
+
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/config');
+        const data = await res.json();
+        if (data.success && data.config) {
+            const cfg = data.config;
+            const elUser = document.getElementById('auto-sync-erp-user');
+            if (elUser) elUser.textContent = cfg.username_masked || 'jan***@sng.com';
+            const elFab = document.getElementById('auto-sync-fabric-count');
+            if (elFab) elFab.textContent = cfg.fabric_count || 12;
+            const elWip = document.getElementById('auto-sync-wip-count');
+            if (elWip) elWip.textContent = cfg.wip_count || 4;
+            
+            const destInput = document.getElementById('auto-sync-dest-dir');
+            if (destInput && !destInput.value) {
+                destInput.value = (cfg.default_download_dir || 'G:\\07-10-2026').replace(/^["']|["']$/g, '').trim();
+            }
+
+            const existingBox = document.getElementById('auto-sync-existing-mainout-box');
+            const existingMeta = document.getElementById('auto-sync-existing-meta');
+            if (cfg.has_existing_mainout && cfg.existing_mainout) {
+                if (existingBox) existingBox.classList.remove('hidden');
+                if (existingMeta) {
+                    existingMeta.innerHTML = `File: <code style="color: #10b981;">${cfg.existing_mainout.path}</code> | Modified: <strong>${cfg.existing_mainout.modified}</strong> (${cfg.existing_mainout.size_kb} KB)`;
+                }
+            } else {
+                if (existingBox) existingBox.classList.add('hidden');
+            }
+        }
+    } catch (err) {
+        console.error('Error fetching ERP sync config:', err);
+    }
+
+    // Load all 3 configuration sections
+    await loadFabricItemsFromServer();
+    await loadWipGroupsFromServer();
+    await loadFilterConfigFromServer();
+
+    // Default to fabric tab
+    switchAutoSyncConfigTab(autoErpSyncState.activeConfigTab || 'fabric');
+    onAutoFeedStrategyChange();
+}
+
+function closeAutoErpSyncModal() {
+    if (autoErpSyncState.isRunning) {
+        if (!confirm('A download sync process is currently running. Close modal anyway? (It will continue in background)')) {
+            return;
+        }
+    }
+    const modal = document.getElementById('modal-stock-wip-auto-erp-sync');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function startAutoErpSyncProcess() {
+    if (autoErpSyncState.isRunning) return;
+
+    let destDir = (document.getElementById('auto-sync-dest-dir')?.value || '').trim();
+    destDir = destDir.replace(/^["']|["']$/g, '').trim();
+    const headless = !!document.getElementById('auto-sync-headless')?.checked;
+    const mode = autoErpSyncState.selectedMode;
+    const feedStrategy = autoErpSyncState.feedStrategy || 'replace';
+
+    const modeLabel = mode === 'auto_save' ? 'Option B: Auto-Save' : 'Option A: Review First';
+    const stratLabel = feedStrategy === 'replace' ? 'Replace Mode (Wipes Old Data)' : 'Append Mode (Keeps Old Data)';
+
+    if (!confirm(`Start Full ERP Auto Download & Feed?\n\nMode: ${modeLabel}\nFeed Strategy: ${stratLabel}\nDestination: ${destDir || 'Default'}\nBrowser: ${headless ? 'Headless' : 'Visible'}\n\nThis will download all 7 reports and generate mainout.xlsx.`)) {
+        return;
+    }
+
+    autoErpSyncState.isRunning = true;
+    autoErpSyncState.lastLogLength = 0;
+
+    // Show progress section
+    const progSection = document.getElementById('auto-sync-progress-section');
+    if (progSection) progSection.classList.remove('hidden');
+    const idleActions = document.getElementById('auto-sync-idle-actions');
+    if (idleActions) idleActions.classList.add('hidden');
+
+    const term = document.getElementById('auto-sync-terminal-log');
+    if (term) term.textContent = 'Initiating request to ERP background engine...\n';
+
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mode: mode,
+                feed_strategy: feedStrategy,
+                download_dir: destDir,
+                headless: headless
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            autoErpSyncState.isRunning = false;
+            if (idleActions) idleActions.classList.remove('hidden');
+            showToast('Error', data.message || 'Failed to start ERP sync.', 'error');
+            return;
+        }
+
+        showToast('Sync Started', `ERP Download pipeline running (${modeLabel} | ${stratLabel})...`, 'info');
+        pollAutoErpSyncStatus();
+    } catch (err) {
+        autoErpSyncState.isRunning = false;
+        if (idleActions) idleActions.classList.remove('hidden');
+        console.error('Error starting sync:', err);
+        showToast('Error', 'Connection error starting sync.', 'error');
+    }
+}
+
+async function pollAutoErpSyncStatus() {
+    if (!autoErpSyncState.isRunning) return;
+
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/status');
+        const data = await res.json();
+        if (data.success && data.state) {
+            const st = data.state;
+
+            // Update step text and progress
+            const stepEl = document.getElementById('auto-sync-current-step-text');
+            if (stepEl) stepEl.textContent = st.step_name || 'Running...';
+
+            const pctEl = document.getElementById('auto-sync-percent-text');
+            if (pctEl) pctEl.textContent = `${st.progress_percent}%`;
+
+            const barEl = document.getElementById('auto-sync-progress-bar');
+            if (barEl) barEl.style.width = `${st.progress_percent}%`;
+
+            // Update step pills
+            const currentStepIdx = st.step_index || 0;
+            for (let i = 1; i <= 8; i++) {
+                const pill = document.getElementById(`step-pill-${i}`);
+                if (pill) {
+                    if (i < currentStepIdx) {
+                        pill.style.background = 'rgba(16, 185, 129, 0.2)';
+                        pill.style.color = '#10b981';
+                        pill.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                    } else if (i === currentStepIdx) {
+                        pill.style.background = 'rgba(59, 130, 246, 0.25)';
+                        pill.style.color = '#60a5fa';
+                        pill.style.borderColor = 'rgba(59, 130, 246, 0.6)';
+                    } else {
+                        pill.style.background = 'rgba(255,255,255,0.04)';
+                        pill.style.color = 'var(--text-muted)';
+                        pill.style.borderColor = 'var(--border-color)';
+                    }
+                }
+            }
+
+            // Update terminal logs
+            const logs = st.logs || [];
+            const term = document.getElementById('auto-sync-terminal-log');
+            const countEl = document.getElementById('auto-sync-log-count');
+            if (term && logs.length !== autoErpSyncState.lastLogLength) {
+                term.textContent = logs.join('\n');
+                term.scrollTop = term.scrollHeight;
+                autoErpSyncState.lastLogLength = logs.length;
+            }
+            if (countEl) countEl.textContent = `${logs.length} lines`;
+
+            // Handle Completion
+            if (st.status === 'completed') {
+                autoErpSyncState.isRunning = false;
+                showToast('Download Completed', 'All 8 steps completed! Fetching and parsing mainout.xlsx...', 'success');
+                
+                // Fetch result and feed into Bulk Feed
+                const resResult = await fetch('/api/stock-wip/auto-feed/result');
+                const resultData = await resResult.json();
+                if (resultData.success) {
+                    await applyAutoErpFeedResult(resultData);
+                } else {
+                    showToast('Feed Error', resultData.message || 'Failed to parse mainout output.', 'error');
+                }
+                return;
+            }
+
+            // Handle Error or Cancelled
+            if (st.status === 'error' || st.status === 'cancelled') {
+                autoErpSyncState.isRunning = false;
+                const idleActions = document.getElementById('auto-sync-idle-actions');
+                if (idleActions) idleActions.classList.remove('hidden');
+                
+                const spinner = document.getElementById('auto-sync-spinner');
+                if (spinner) spinner.style.display = 'none';
+
+                if (st.status === 'error') {
+                    showToast('Sync Error', st.error || 'ERP download failed.', 'error');
+                } else {
+                    showToast('Sync Cancelled', 'Sync process was cancelled.', 'warning');
+                }
+                return;
+            }
+        }
+    } catch (err) {
+        console.error('Error polling sync status:', err);
+    }
+
+    // Schedule next poll
+    if (autoErpSyncState.isRunning) {
+        setTimeout(pollAutoErpSyncStatus, 1500);
+    }
+}
+
+async function stopAutoErpSyncProcess() {
+    if (!confirm('Are you sure you want to stop/abort the current ERP download process?')) {
+        return;
+    }
+    try {
+        const btn = document.getElementById('btn-auto-sync-stop');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Stopping...';
+        }
+        await fetch('/api/stock-wip/auto-feed/stop', { method: 'POST' });
+        showToast('Aborting', 'Stop requested. Browser will exit shortly.', 'warning');
+    } catch (err) {
+        console.error('Error stopping sync:', err);
+    }
+}
+
+async function quickLoadAutoErpFeed() {
+    const mode = autoErpSyncState.selectedMode;
+    const feedStrategy = autoErpSyncState.feedStrategy || 'replace';
+    const modeLabel = mode === 'auto_save' ? 'Option B: Auto-Save' : 'Option A: Review First';
+    const stratLabel = feedStrategy === 'replace' ? 'Replace Mode (Wipes Old Data)' : 'Append Mode (Keeps Old Data)';
+
+    if (!confirm(`Instantly load and feed existing mainout.xlsx without downloading from ERP?\n\nMode: ${modeLabel}\nFeed Strategy: ${stratLabel}`)) {
+        return;
+    }
+
+    showLoader(true, 'Parsing existing mainout.xlsx workbook...');
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/quick-load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: mode, feed_strategy: feedStrategy })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            closeAutoErpSyncModal();
+            await applyAutoErpFeedResult(data);
+        } else {
+            showToast('Load Failed', data.message || 'Could not load mainout.xlsx', 'error');
+        }
+    } catch (err) {
+        console.error('Quick load error:', err);
+        showToast('Error', 'Connection error loading mainout.xlsx', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+async function applyAutoErpFeedResult(result) {
+    const sheets = result.sheets || {};
+    const mode = result.mode || autoErpSyncState.selectedMode || 'review';
+    const feedStrategy = result.feed_strategy || autoErpSyncState.feedStrategy || 'replace';
+    autoErpSyncState.feedStrategy = feedStrategy;
+    const totalRecords = (result.summary || {}).total_rows || 0;
+
+    // Load sheets into bulkFeedState
+    bulkFeedState.sheets = sheets;
+    bulkFeedState.filename = result.output_file ? result.output_file.split(/[\/\\]/).pop() : 'mainout.xlsx';
+    bulkFeedState.isLoaded = true;
+    bulkFeedState.isValidated = false;
+    bulkFeedState.activeSheet = 'Fabric Stock';
+    bulkFeedState.searchQuery = '';
+    bulkFeedState.filterStatus = '';
+    bulkFeedState.currentPage = 1;
+    bulkFeedState.editingRowIdx = null;
+
+    // Close sync modal
+    closeAutoErpSyncModal();
+
+    // Open Bulk Feed Modal
+    openStockWipBulkFeedModal();
+
+    // Sync strategy selector in grid modal
+    const rad = document.getElementById(feedStrategy === 'replace' ? 'grid-strategy-replace' : 'grid-strategy-append');
+    if (rad) rad.checked = true;
+
+    // Update views
+    const uploadView = document.getElementById('bulk-feed-upload-view');
+    const gridView = document.getElementById('bulk-feed-grid-view');
+    if (uploadView) uploadView.classList.add('hidden');
+    if (gridView) gridView.classList.remove('hidden');
+
+    const elFilename = document.getElementById('bulk-feed-filename');
+    if (elFilename) elFilename.textContent = bulkFeedState.filename;
+
+    const elTotalBadge = document.getElementById('bulk-feed-total-loaded-badge');
+    if (elTotalBadge) elTotalBadge.textContent = totalRecords.toLocaleString();
+
+    updateBulkFeedKpiCards();
+    updateBulkFeedSheetTabBadges();
+    renderBulkFeedGrid();
+
+    const btnVal = document.getElementById('btn-bulk-feed-validate');
+    const btnSave = document.getElementById('btn-bulk-feed-save');
+    if (btnVal) btnVal.disabled = false;
+    if (btnSave) btnSave.disabled = true;
+
+    showToast('Loaded Successfully', `${totalRecords.toLocaleString()} rows parsed across 5 sheets from mainout.xlsx. Now running Master Validation...`, 'info');
+
+    // Run Master Validation
+    await validateBulkFeedGridData();
+
+    // If Mode is Option B (auto_save), automatically save!
+    if (mode === 'auto_save') {
+        showToast('Auto-Save Mode', 'Validation completed. Initiating automatic database commit...', 'info');
+        await new Promise(r => setTimeout(r, 600));
+        await saveBulkFeedGridData();
+    }
+}
+
+// =====================================================================
+// SHEET-WISE WHITELIST FILTER MANAGER
+// =====================================================================
+
+let filterManagerState = {
+    isExpanded: true,
+    activeSheet: 'Finished Goods',
+    config: {
+        enabled: true,
+        filters: {
+            'Fabric Stock': [],
+            'Fabric WIP': [],
+            'Production WIP': [],
+            'Pending Orders': [],
+            'Finished Goods': []
+        }
+    }
+};
+
+async function loadFilterConfigFromServer() {
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/filters');
+        const data = await res.json();
+        if (data.success && data.filter_config) {
+            filterManagerState.config = data.filter_config;
+            if (!filterManagerState.config.filters) {
+                filterManagerState.config.filters = {};
+            }
+            ['Fabric Stock', 'Fabric WIP', 'Production WIP', 'Pending Orders', 'Finished Goods'].forEach(s => {
+                if (!filterManagerState.config.filters[s]) {
+                    filterManagerState.config.filters[s] = [];
+                }
+            });
+            renderFilterManager();
+        }
+    } catch (err) {
+        console.error('Error loading filter config:', err);
+    }
+}
+
+function renderFilterManager() {
+    const cfg = filterManagerState.config;
+    const activeSheet = filterManagerState.activeSheet;
+    const filters = cfg.filters || {};
+
+    // 1. Master Enable Checkbox
+    const masterEnableCheck = document.getElementById('filter-manager-master-enable');
+    if (masterEnableCheck) {
+        masterEnableCheck.checked = cfg.enabled !== false;
+    }
+
+    // 2. Tab Badges & Active Styling
+    const sheetTabs = ['Fabric Stock', 'Fabric WIP', 'Production WIP', 'Pending Orders', 'Finished Goods'];
+    sheetTabs.forEach(s => {
+        const tabId = 'ftab-' + s.replace(/\s+/g, '-');
+        const badgeId = 'fbadge-' + s.replace(/\s+/g, '-');
+        const btn = document.getElementById(tabId);
+        const badge = document.getElementById(badgeId);
+        const count = (filters[s] || []).length;
+
+        if (badge) badge.textContent = count;
+
+        if (btn) {
+            if (s === activeSheet) {
+                btn.style.background = 'var(--accent-blue)';
+                btn.style.color = '#ffffff';
+                btn.style.borderColor = 'var(--accent-blue)';
+                btn.style.fontWeight = '700';
+            } else {
+                btn.style.background = 'rgba(255, 255, 255, 0.04)';
+                btn.style.color = 'var(--text-secondary)';
+                btn.style.borderColor = 'var(--border-color)';
+                btn.style.fontWeight = '500';
+            }
+        }
+    });
+
+    // 3. Subtitle
+    const currentList = filters[activeSheet] || [];
+    const activeCount = currentList.filter(it => it.enabled !== false).length;
+    const subEl = document.getElementById('filter-sheet-subtitle');
+    if (subEl) {
+        subEl.innerHTML = `Allowed items for <strong>'${activeSheet}'</strong> by Product Name (${currentList.length} items configured, <strong style="color: #10b981;">${activeCount} active</strong> with tick box):`;
+    }
+
+    // 4. Render Items
+    const container = document.getElementById('filter-items-container');
+    if (!container) return;
+
+    if (currentList.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 12.5px;">
+                <i class="fa-solid fa-list-check" style="font-size: 22px; margin-bottom: 6px; opacity: 0.4;"></i>
+                <div>No whitelist filters configured for '${activeSheet}'.</div>
+                <div style="font-size: 11.5px; opacity: 0.7; margin-top: 3px;">All records for this sheet will be passed through without filtering. You can add items below.</div>
+            </div>
+        `;
+        return;
+    }
+
+    let rowsHtml = '';
+    currentList.forEach((it, idx) => {
+        const isEnabled = it.enabled !== false;
+        const itemName = typeof it === 'string' ? it : (it.name || '');
+        const bgStyle = isEnabled ? 'background: rgba(255,255,255,0.03);' : 'background: rgba(255,255,255,0.01); opacity: 0.65;';
+        const tagHtml = isEnabled 
+            ? '<span style="font-size: 11px; font-weight: 600; color: #10b981; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-check"></i> Included</span>'
+            : '<span style="font-size: 11px; font-weight: 500; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-ban"></i> Excluded</span>';
+
+        rowsHtml += `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); ${bgStyle} transition: background 0.15s;">
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+                    <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFilterItem(${idx})"
+                        style="accent-color: #10b981; width: 16px; height: 16px; cursor: pointer;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${escapeHtml(itemName)}
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    ${tagHtml}
+                    <button type="button" onclick="removeFilterItem(${idx})" title="Remove item from filter"
+                        style="background: none; border: none; color: var(--accent-red); cursor: pointer; padding: 4px 6px; border-radius: 4px; opacity: 0.8; transition: opacity 0.2s;"
+                        onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">
+                        <i class="fa-solid fa-trash-can" style="font-size: 13px;"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = rowsHtml;
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+    });
+}
+
+function switchFilterSheet(sheetName) {
+    filterManagerState.activeSheet = sheetName;
+    renderFilterManager();
+}
+
+function toggleFilterManagerExpand() {
+    filterManagerState.isExpanded = !filterManagerState.isExpanded;
+    const body = document.getElementById('filter-manager-body');
+    const lbl = document.getElementById('lbl-toggle-filter-manager');
+    const btn = document.getElementById('btn-toggle-filter-manager');
+    if (body) {
+        body.style.display = filterManagerState.isExpanded ? 'flex' : 'none';
+    }
+    if (lbl) {
+        lbl.textContent = filterManagerState.isExpanded ? 'Collapse' : 'Expand Filters';
+    }
+    if (btn) {
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.className = filterManagerState.isExpanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down';
+        }
+    }
+}
+
+function onFilterMasterEnableChange() {
+    const chk = document.getElementById('filter-manager-master-enable');
+    if (chk) {
+        filterManagerState.config.enabled = chk.checked;
+    }
+}
+
+function toggleFilterItem(idx) {
+    const sheet = filterManagerState.activeSheet;
+    const items = filterManagerState.config.filters[sheet] || [];
+    if (items[idx]) {
+        if (typeof items[idx] === 'string') {
+            items[idx] = { name: items[idx], enabled: false };
+        } else {
+            items[idx].enabled = !items[idx].enabled;
+        }
+        renderFilterManager();
+    }
+}
+
+function removeFilterItem(idx) {
+    const sheet = filterManagerState.activeSheet;
+    const items = filterManagerState.config.filters[sheet] || [];
+    if (items[idx] !== undefined) {
+        const name = typeof items[idx] === 'string' ? items[idx] : items[idx].name;
+        items.splice(idx, 1);
+        renderFilterManager();
+    }
+}
+
+function filterSelectAllCurrentSheet() {
+    const sheet = filterManagerState.activeSheet;
+    const items = filterManagerState.config.filters[sheet] || [];
+    items.forEach((it, idx) => {
+        if (typeof it === 'string') {
+            items[idx] = { name: it, enabled: true };
+        } else {
+            it.enabled = true;
+        }
+    });
+    renderFilterManager();
+}
+
+function filterDeselectAllCurrentSheet() {
+    const sheet = filterManagerState.activeSheet;
+    const items = filterManagerState.config.filters[sheet] || [];
+    items.forEach((it, idx) => {
+        if (typeof it === 'string') {
+            items[idx] = { name: it, enabled: false };
+        } else {
+            it.enabled = false;
+        }
+    });
+    renderFilterManager();
+}
+
+function filterClearCurrentSheet() {
+    const sheet = filterManagerState.activeSheet;
+    const items = filterManagerState.config.filters[sheet] || [];
+    if (items.length === 0) return;
+    if (!confirm(`Are you sure you want to remove ALL ${items.length} filter items from '${sheet}'?`)) {
+        return;
+    }
+    filterManagerState.config.filters[sheet] = [];
+    renderFilterManager();
+    showToast('Sheet Cleared', `Cleared all items from ${sheet}. Click Save Filters to persist.`, 'info');
+}
+
+function filterAddNewItem() {
+    const input = document.getElementById('filter-new-item-input');
+    if (!input) return;
+    const val = (input.value || '').trim();
+    if (!val) {
+        showToast('Empty Item', 'Please enter an item name.', 'warning');
+        return;
+    }
+
+    const sheet = filterManagerState.activeSheet;
+    if (!filterManagerState.config.filters[sheet]) {
+        filterManagerState.config.filters[sheet] = [];
+    }
+
+    const items = filterManagerState.config.filters[sheet];
+    const exists = items.some(it => {
+        const n = typeof it === 'string' ? it : it.name;
+        return n.trim().toUpperCase() === val.toUpperCase();
+    });
+
+    if (exists) {
+        showToast('Duplicate Item', `'${val}' already exists in ${sheet} filters.`, 'warning');
+        return;
+    }
+
+    items.push({ name: val, enabled: true });
+    input.value = '';
+    renderFilterManager();
+    showToast('Item Added', `Added '${val}' to ${sheet} filters. Click Save Filters to persist.`, 'success');
+}
+
+function filterOpenPasteMultipleModal() {
+    const modal = document.getElementById('modal-filter-paste-multiple');
+    if (modal) modal.classList.remove('hidden');
+    const ta = document.getElementById('filter-paste-textarea');
+    if (ta) {
+        ta.value = '';
+        ta.focus();
+    }
+}
+
+function filterClosePasteMultipleModal() {
+    const modal = document.getElementById('modal-filter-paste-multiple');
+    if (modal) modal.classList.add('hidden');
+}
+
+function filterApplyPasteMultiple() {
+    const ta = document.getElementById('filter-paste-textarea');
+    if (!ta) return;
+    const text = (ta.value || '').trim();
+    if (!text) {
+        filterClosePasteMultipleModal();
+        return;
+    }
+
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const sheet = filterManagerState.activeSheet;
+    if (!filterManagerState.config.filters[sheet]) {
+        filterManagerState.config.filters[sheet] = [];
+    }
+    const items = filterManagerState.config.filters[sheet];
+
+    let addedCount = 0;
+    lines.forEach(line => {
+        const exists = items.some(it => {
+            const n = typeof it === 'string' ? it : it.name;
+            return n.trim().toUpperCase() === line.toUpperCase();
+        });
+        if (!exists) {
+            items.push({ name: line, enabled: true });
+            addedCount++;
+        }
+    });
+
+    filterClosePasteMultipleModal();
+    renderFilterManager();
+    showToast('Items Added', `Added ${addedCount} new items to '${sheet}'. Click Save Filters to persist.`, 'success');
+}
+
+async function saveFilterConfigToServer() {
+    const btn = document.getElementById('btn-save-filter-config');
+    const oldText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
+
+    try {
+        const res = await fetch('/api/stock-wip/auto-feed/filters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter_config: filterManagerState.config })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Filters Saved', 'Sheet-wise whitelist filters saved successfully!', 'success');
+        } else {
+            showToast('Save Failed', data.message || 'Could not save filters.', 'error');
+        }
+    } catch (err) {
+        console.error('Error saving filter config:', err);
+        showToast('Error', 'Connection error saving filter config.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldText;
+        }
+    }
+}
+
+
 

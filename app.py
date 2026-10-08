@@ -11205,6 +11205,7 @@ def save_bulk_feed_data():
     data = request.json or {}
     sheets_data = data.get('sheets', {})
     username = session.get('username', 'system')
+    feed_strategy = str(data.get('feed_strategy', 'append')).lower().strip() # 'replace' or 'append'
     
     conn = None
     try:
@@ -11242,6 +11243,15 @@ def save_bulk_feed_data():
             cur.close()
             return jsonify({'success': False, 'message': 'No records found in any of the 5 sheets to save.'}), 400
             
+        # 1.5. If Replace Mode is selected, wipe existing data across the 5 tables inside the same transaction
+        if feed_strategy == 'replace':
+            logging.info(f"[BULK FEED] Replace mode requested by {username}. Atomically deleting existing records in 5 tables...")
+            cur.execute("DELETE FROM fabric_stock;")
+            cur.execute("DELETE FROM fabric_wip;")
+            cur.execute("DELETE FROM production_wip;")
+            cur.execute("DELETE FROM pending_orders;")
+            cur.execute("DELETE FROM finished_goods;")
+
         # 2. Atomic Multi-Table Insertion
         inserted_counts = {}
         total_inserted = 0
@@ -11335,6 +11345,7 @@ def save_bulk_feed_data():
         return jsonify({
             'success': True,
             'message': 'Bulk Feed completed successfully.',
+            'feed_strategy': feed_strategy,
             'inserted_counts': inserted_counts,
             'total_inserted': total_inserted
         })
@@ -11345,6 +11356,182 @@ def save_bulk_feed_data():
     finally:
         if conn:
             release_db_connection(conn)
+
+# =====================================================================
+# ERP AUTO SYNC & BULK FEED APIS (CONNECTED TO AUTO DOWNLOAD ENGINE)
+# =====================================================================
+from erp_auto_sync_service import erp_sync_service
+
+@app.route('/api/stock-wip/auto-feed/config', methods=['GET'])
+@login_required
+def get_auto_feed_config():
+    try:
+        cfg = erp_sync_service.load_source_config()
+        return jsonify({'success': True, 'config': cfg})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/start', methods=['POST'])
+@login_required
+def start_auto_feed_sync():
+    data = request.json or {}
+    mode = data.get('mode', 'review') # 'review' (Option A) or 'auto_save' (Option B)
+    feed_strategy = str(data.get('feed_strategy', 'replace')).lower().strip() # 'replace' or 'append'
+    download_dir = data.get('download_dir')
+    headless = bool(data.get('headless', False))
+    
+    success, msg = erp_sync_service.start_sync(
+        mode=mode,
+        download_dir=download_dir,
+        headless=headless,
+        feed_strategy=feed_strategy
+    )
+    if not success:
+        return jsonify({'success': False, 'message': msg}), 400
+    return jsonify({'success': True, 'message': msg})
+
+@app.route('/api/stock-wip/auto-feed/status', methods=['GET'])
+@login_required
+def get_auto_feed_status():
+    return jsonify({'success': True, 'state': erp_sync_service.get_status()})
+
+@app.route('/api/stock-wip/auto-feed/stop', methods=['POST'])
+@login_required
+def stop_auto_feed_sync():
+    erp_sync_service.stop()
+    return jsonify({'success': True, 'message': 'Cancellation requested.'})
+
+@app.route('/api/stock-wip/auto-feed/result', methods=['GET'])
+@login_required
+def get_auto_feed_result():
+    state = erp_sync_service.get_status()
+    if state.get('status') != 'completed':
+        return jsonify({'success': False, 'message': 'Sync is not completed yet.'}), 400
+    
+    out_file = state.get('output_file')
+    if not out_file or not os.path.exists(out_file):
+        return jsonify({'success': False, 'message': 'Output file not found.'}), 404
+        
+    try:
+        parsed_sheets, summary = erp_sync_service.parse_mainout_file(out_file)
+        return jsonify({
+            'success': True,
+            'sheets': parsed_sheets,
+            'summary': summary,
+            'output_file': out_file,
+            'mode': state.get('mode', 'review'),
+            'feed_strategy': state.get('feed_strategy', 'replace')
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error reading output: {str(e)}'}), 500
+
+@app.route('/api/stock-wip/auto-feed/quick-load', methods=['POST'])
+@login_required
+def quick_load_auto_feed():
+    data = request.json or {}
+    cfg = erp_sync_service.load_source_config()
+    default_path = (cfg.get('existing_mainout') or {}).get('path')
+    target_path = data.get('file_path') or default_path
+    
+    if not target_path or not os.path.exists(target_path):
+        return jsonify({'success': False, 'message': 'mainout.xlsx file not found on disk.'}), 404
+        
+    try:
+        parsed_sheets, summary = erp_sync_service.parse_mainout_file(target_path)
+        return jsonify({
+            'success': True,
+            'sheets': parsed_sheets,
+            'summary': summary,
+            'output_file': target_path,
+            'mode': data.get('mode', 'review'),
+            'feed_strategy': data.get('feed_strategy', 'replace')
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error reading mainout.xlsx: {str(e)}'}), 500
+
+@app.route('/api/stock-wip/auto-feed/filters', methods=['GET'])
+@login_required
+def get_auto_feed_filters():
+    try:
+        cfg = erp_sync_service.get_filter_config()
+        return jsonify({'success': True, 'filter_config': cfg})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/filters', methods=['POST'])
+@login_required
+def save_auto_feed_filters():
+    data = request.json or {}
+    filter_config = data.get('filter_config')
+    if not filter_config:
+        return jsonify({'success': False, 'message': 'filter_config is required.'}), 400
+    try:
+        erp_sync_service.save_filter_config(filter_config)
+        return jsonify({'success': True, 'message': 'Filter configuration saved successfully.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/fabric-items', methods=['GET'])
+@login_required
+def get_auto_feed_fabric_items():
+    try:
+        items = erp_sync_service.get_fabric_list()
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/fabric-items', methods=['POST'])
+@login_required
+def save_auto_feed_fabric_items():
+    data = request.json or {}
+    items = data.get('items')
+    if not isinstance(items, list):
+        return jsonify({'success': False, 'message': 'items list is required.'}), 400
+    try:
+        erp_sync_service.save_fabric_list(items)
+        return jsonify({'success': True, 'message': 'Fabric list saved successfully.', 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/fabric-items/reset', methods=['POST'])
+@login_required
+def reset_auto_feed_fabric_items():
+    try:
+        items = erp_sync_service.reset_fabric_list()
+        return jsonify({'success': True, 'message': 'Fabric list reset to defaults.', 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/wip-groups', methods=['GET'])
+@login_required
+def get_auto_feed_wip_groups():
+    try:
+        items = erp_sync_service.get_wip_list()
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/wip-groups', methods=['POST'])
+@login_required
+def save_auto_feed_wip_groups():
+    data = request.json or {}
+    items = data.get('items')
+    if not isinstance(items, list):
+        return jsonify({'success': False, 'message': 'items list is required.'}), 400
+    try:
+        erp_sync_service.save_wip_list(items)
+        return jsonify({'success': True, 'message': 'Production WIP groupings saved successfully.', 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/stock-wip/auto-feed/wip-groups/reset', methods=['POST'])
+@login_required
+def reset_auto_feed_wip_groups():
+    try:
+        items = erp_sync_service.reset_wip_list()
+        return jsonify({'success': True, 'message': 'Production WIP groupings reset to defaults.', 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 # =====================================================================
 # PENDING QTY PLANNING MODULE APIS (ISOLATED & PRODUCTION-SAFE)

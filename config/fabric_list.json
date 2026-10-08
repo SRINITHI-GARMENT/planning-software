@@ -1,0 +1,74 @@
+[
+  {
+    "enabled": true,
+    "fabric": "CRYSTAL LYCRA",
+    "gsm": "",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "LYCRA JERSEY",
+    "gsm": "185",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "LYCRA JERSEY",
+    "gsm": "210",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "NYLON SHIMMER",
+    "gsm": "",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "POLY SHIMMER",
+    "gsm": "",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "VISCOSE LYCRA JERSEY",
+    "gsm": "",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "CROSS LOOP DESIGN",
+    "gsm": "",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "SINGLE JERSEY",
+    "gsm": "165",
+    "unit": "Kgs"
+  },
+  {
+    "enabled": true,
+    "fabric": "METTALIC",
+    "gsm": "",
+    "unit": "Mtr"
+  },
+  {
+    "enabled": true,
+    "fabric": "RAYON SLUB LYCRA BFOLD",
+    "gsm": "",
+    "unit": "Mtr"
+  },
+  {
+    "enabled": true,
+    "fabric": "RAYON",
+    "gsm": "",
+    "unit": "Mtr"
+  },
+  {
+    "enabled": true,
+    "fabric": "HAVY RAYON",
+    "gsm": "",
+    "unit": "Mtr"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "enabled": true,
+    "grouping": "CUTTING"
+  },
+  {
+    "enabled": true,
+    "grouping": "STITCHING"
+  },
+  {
+    "enabled": true,
+    "grouping": "SNG - HALF FINISHING"
+  },
+  {
+    "enabled": true,
+    "grouping": "IRONING & PACKING"
+  }
+]

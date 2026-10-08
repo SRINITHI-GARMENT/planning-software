@@ -19,6 +19,7 @@ class SafeStream:
             self.original.flush()
         except Exception:
             pass
+        
     def reconfigure(self, *args, **kwargs):
         try:
             self.original.reconfigure(*args, **kwargs)
