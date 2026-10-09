@@ -216,10 +216,10 @@ def main():
     pwd = os.environ.get("ERP_PASSWORD", "Jana@#123").strip()
     db_url = os.environ.get("DATABASE_URL", DEFAULT_DB_URL).strip()
     
-    # Destination folder defaults to ./downloads/<today>
     today_str = datetime.date.today().strftime("%d-%m-%Y")
     default_dir = str(TOOL_DIR / "downloads" / today_str)
-    base_dir = os.environ.get("DOWNLOAD_DIR", default_dir).strip().strip('"').strip("'")
+    raw_dir = (os.environ.get("DOWNLOAD_DIR") or "").strip().strip('"').strip("'")
+    base_dir = raw_dir if raw_dir else default_dir
     
     headless_str = os.environ.get("HEADLESS", "false").strip().lower()
     headless = headless_str in ("true", "1", "yes")

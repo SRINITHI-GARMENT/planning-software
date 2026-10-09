@@ -10980,6 +10980,51 @@ def download_bulk_feed_template():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error generating bulk template: {str(e)}'}), 500
 
+@app.route('/api/download/portable-sync-tool', methods=['GET'])
+def download_portable_sync_tool():
+    try:
+        import zipfile
+        import io
+        from flask import send_file
+        
+        candidates = [
+            os.path.join(app.root_path, 'static', 'downloads', 'DATSerp_Cloud_Sync_Tool.zip'),
+            os.path.join(app.root_path, 'DATSerp_Cloud_Sync_Tool.zip')
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                return send_from_directory(
+                    os.path.dirname(p),
+                    os.path.basename(p),
+                    as_attachment=True,
+                    download_name='DATSerp_Cloud_Sync_Tool.zip',
+                    mimetype='application/zip'
+                )
+        
+        # If pre-built zip not found, dynamically build it from DATSerp_Cloud_Sync_Tool folder
+        tool_folder = os.path.join(app.root_path, 'DATSerp_Cloud_Sync_Tool')
+        if os.path.exists(tool_folder):
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(tool_folder):
+                    dirs[:] = [d for d in dirs if d not in ['__pycache__', '.pytest_cache', 'downloads']]
+                    for file in files:
+                        if file.endswith('.pyc') or file.endswith('.tmp'):
+                            continue
+                        fpath = os.path.join(root, file)
+                        arcname = os.path.relpath(fpath, os.path.dirname(tool_folder))
+                        zf.write(fpath, arcname)
+            zip_buf.seek(0)
+            return send_file(
+                zip_buf,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='DATSerp_Cloud_Sync_Tool.zip'
+            )
+        return jsonify({'success': False, 'message': 'Portable sync tool folder not found on server.'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error serving portable tool: {str(e)}'}), 500
+
 # Single-Tab Validate API
 @app.route('/api/planning-stock/validate', methods=['POST'])
 @app.route('/api/stock-wip/validate', methods=['POST'])
