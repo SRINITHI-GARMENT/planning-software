@@ -679,11 +679,12 @@ def calculate_pending_qty_engine(cur, plan_name, financial_year, version, from_d
         consumers.sort(key=lambda x: (x['priority'], -x['net_pending_qty']))
 
         # Check total manual allocation validation
+        effective_stock = max(0.0, avail_stock)
         manual_sum = sum(c['manual_allocated_kg'] for c in consumers if c.get('manual_allocated_kg') is not None)
-        if manual_sum > avail_stock:
-            raise ValueError(f"Total manual allocation ({manual_sum:.2f} kg) exceeds available stock ({avail_stock:.2f} kg) for fabric pool {pool_data['fabric_name']} / {pool_data['fabric_color']}!")
+        if manual_sum > effective_stock:
+            raise ValueError(f"Total manual allocation ({manual_sum:.2f} kg) exceeds available stock ({effective_stock:.2f} kg) for fabric pool {pool_data['fabric_name']} / {pool_data['fabric_color']}!")
 
-        remaining_stock = avail_stock
+        remaining_stock = effective_stock
         # First pass: Allocate manual overrides
         for item in consumers:
             if item.get('manual_allocated_kg') is not None:
@@ -1534,13 +1535,14 @@ def save_manual_allocation(cur, plan_id, fabric_name, fabric_color, dia, gsm, al
         return {'success': False, 'message': 'Fabric pool not found in this plan.'}
 
     avail_stock = float(avail_row[0] or 0.0)
+    effective_stock = max(0.0, avail_stock)
     
     # 2. Validate total manual allocations <= available stock
     total_manual = sum(float(a.get('manual_allocated_kg') or 0.0) for a in allocations)
-    if total_manual > avail_stock + 0.001:
+    if total_manual > effective_stock + 0.001:
         return {
             'success': False,
-            'message': f"Validation Failed: Total manual allocation ({total_manual:.2f} kg) exceeds available stock ({avail_stock:.2f} kg)."
+            'message': f"Validation Failed: Total manual allocation ({total_manual:.2f} kg) exceeds available stock ({effective_stock:.2f} kg)."
         }
 
     # Fetch plan details
