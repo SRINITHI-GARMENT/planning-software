@@ -75,22 +75,29 @@ def close_overlays(driver):
         pass
 
 
-def set_angular_autocomplete(driver, field_name, value, timeout=10):
+def set_angular_autocomplete(driver, field_name, value, timeout=12):
     """
-    Sets Angular Material md-autocomplete value robustly by typing, selecting
-    from suggestions controller, and closing overlays. Clears field if value is empty.
+    Sets Angular Material md-autocomplete value robustly by typing, waiting
+    for suggestions controller matches, selecting the matching item, and closing overlays.
+    Clears field if value is empty.
     """
     if not value or not str(value).strip():
         # Clear field via Angular controller & input
-        driver.execute_script(f"""
-            var el = document.querySelector("md-autocomplete[md-input-name='{field_name}']") ||
-                     document.querySelector("md-autocomplete[md-floating-label*='{field_name}']");
-            if (el) {{
-                var ctrl = angular.element(el).controller('mdAutocomplete');
-                if (ctrl) ctrl.clear();
-            }}
-        """)
-        return
+        try:
+            driver.execute_script(f"""
+                var el = document.querySelector("md-autocomplete[md-input-name='{field_name}']") ||
+                         document.querySelector("md-autocomplete[md-floating-label*='{field_name}']");
+                if (el) {{
+                    var ctrl = angular.element(el).controller('mdAutocomplete');
+                    if (ctrl) {{
+                        ctrl.clear();
+                        if (ctrl.scope) ctrl.scope.searchText = '';
+                    }}
+                }}
+            """)
+        except Exception:
+            pass
+        return True
 
     val_str = str(value).strip()
     
@@ -111,44 +118,56 @@ def set_angular_autocomplete(driver, field_name, value, timeout=10):
     time.sleep(0.2)
     inp.send_keys(val_str)
     
-    # Allow md-delay (500ms) + query debounce
-    time.sleep(1.0)
-
-    # Try selecting via mdAutocomplete controller matches
-    matched = driver.execute_script(f"""
-        var targetVal = arguments[0].trim().toUpperCase();
-        var el = document.querySelector("md-autocomplete[md-input-name='{field_name}']") ||
-                 document.querySelector("md-autocomplete[md-floating-label*='{field_name}']");
-        if (!el) return false;
-        var ctrl = angular.element(el).controller('mdAutocomplete');
-        if (!ctrl) return false;
-        
-        var matches = ctrl.matches;
-        if (matches && matches.length > 0) {{
-            for (var i = 0; i < matches.length; i++) {{
-                var m = matches[i];
-                var name = (m.name || m.code || m.title || String(m)).trim().toUpperCase();
-                if (name === targetVal || name.indexOf(targetVal) !== -1 || targetVal.indexOf(name) !== -1) {{
-                    ctrl.select(i);
+    # Wait up to 4.5 seconds for mdAutocomplete matches to appear and select target
+    start_match_wait = time.time()
+    matched = False
+    while time.time() - start_match_wait < 4.5:
+        try:
+            matched = driver.execute_script("""
+                var targetVal = arguments[0].trim().toUpperCase();
+                var field = arguments[1];
+                var el = document.querySelector("md-autocomplete[md-input-name='" + field + "']") ||
+                         document.querySelector("md-autocomplete[md-floating-label*='" + field + "']");
+                if (!el) return false;
+                var ctrl = angular.element(el).controller('mdAutocomplete');
+                if (!ctrl) return false;
+                
+                var matches = ctrl.matches;
+                if (matches && matches.length > 0) {
+                    for (var i = 0; i < matches.length; i++) {
+                        var m = matches[i];
+                        var name = (m.name || m.code || m.title || m.fabricName || String(m)).trim().toUpperCase();
+                        if (name === targetVal || name.indexOf(targetVal) !== -1 || targetVal.indexOf(name) !== -1) {
+                            ctrl.select(i);
+                            return true;
+                        }
+                    }
+                    ctrl.select(0);
                     return true;
-                }}
-            }}
-            ctrl.select(0);
-            return true;
-        }}
-        return false;
-    """, val_str)
+                }
+                return false;
+            """, val_str, field_name)
+            if matched:
+                break
+        except Exception:
+            pass
+        time.sleep(0.3)
 
     if not matched:
-        # Fallback: check visible repeat container items or press ENTER
+        # Fallback: check visible repeat container items
         try:
-            items = driver.find_elements(By.XPATH, "//md-virtual-repeat-container[not(contains(@class,'ng-hide'))]//li")
-            for it in items:
-                txt = driver.execute_script("return (arguments[0].textContent || '').trim();", it)
-                if val_str.upper() in txt.upper():
-                    safe_click(driver, it)
-                    matched = True
+            for _ in range(4):
+                items = driver.find_elements(By.XPATH, "//md-virtual-repeat-container[not(contains(@class,'ng-hide'))]//li")
+                if items:
+                    for it in items:
+                        txt = driver.execute_script("return (arguments[0].textContent || '').trim();", it)
+                        if val_str.upper() in txt.upper() or txt.upper() in val_str.upper():
+                            safe_click(driver, it)
+                            matched = True
+                            break
+                if matched:
                     break
+                time.sleep(0.3)
         except Exception:
             pass
 
@@ -160,6 +179,7 @@ def set_angular_autocomplete(driver, field_name, value, timeout=10):
     time.sleep(0.4)
     close_overlays(driver)
     time.sleep(0.2)
+    return matched
 
 
 def setup_chrome_driver(download_dir, headless=False):
@@ -272,89 +292,108 @@ def run_batch_download(
         driver = setup_chrome_driver(dest_dir, headless=headless)
         wait = WebDriverWait(driver, 25)
 
-        # 1. Login once
-        log("[1/2] Connecting to DATSerp ERP & Logging in...")
-        driver.get("https://erp.datserp.com/")
+        def connect_and_open_fabric_stock(d, w):
+            log("[1/2] Connecting to DATSerp ERP & Logging in...")
+            d.get("https://erp.datserp.com/")
 
-        if stop_event and stop_event.is_set():
-            return False, "Cancelled by user"
-
-        # Check if Cloudflare verification screen is active
-        cf_wait_start = time.time()
-        while time.time() - cf_wait_start < 45:
-            title = (driver.title or "").strip().lower()
-            if "one moment" in title or "just a moment" in title or "checking your browser" in title or "verif" in title:
-                log(f"  Cloudflare verification screen active ('{driver.title}'), waiting for challenge...")
-                time.sleep(2)
-            else:
-                break
-
-        # Check if already authenticated
-        if "#/login" not in (driver.current_url or "") and len(driver.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
-            log("  Already logged in!")
-        else:
-            if "#/login" not in (driver.current_url or ""):
-                driver.get(ERP_LOGIN_URL)
-                time.sleep(1)
-            user_selectors = [
-                (By.CSS_SELECTOR, "input[ng-model='form.email']"),
-                (By.CSS_SELECTOR, "input[placeholder*='Email' i]"),
-                (By.CSS_SELECTOR, "input[type='text'][ng-model*='email' i]"),
-                (By.CSS_SELECTOR, "input[type='email']"),
-                (By.NAME, "email"),
-                (By.NAME, "username"),
-                (By.NAME, "user"),
-                (By.CSS_SELECTOR, "input[ng-model*='user' i]"),
-                (By.XPATH, "(//input[@type='text' or @type='email' or not(@type)])[1]")
-            ]
-            user_in = find_element_by_selectors(driver, user_selectors, timeout=20, condition="visible")
-            user_in.clear()
-            user_in.send_keys(username)
-
-            pass_selectors = [
-                (By.ID, "password"),
-                (By.CSS_SELECTOR, "input[ng-model='form.password']"),
-                (By.CSS_SELECTOR, "input[type='password']"),
-                (By.NAME, "password"),
-                (By.XPATH, "(//input[@type='password'])[1]")
-            ]
-            pass_in = find_element_by_selectors(driver, pass_selectors, timeout=10, condition="visible")
-            pass_in.clear()
-            pass_in.send_keys(password)
-
-            login_btn = find_element_by_selectors(driver, [
-                (By.CSS_SELECTOR, "button[type='submit']"),
-                (By.XPATH, "//button[contains(normalize-space(),'Login') or contains(@ng-click,'login')]"),
-                (By.CSS_SELECTOR, ".login-btn-info")
-            ], timeout=10, condition="clickable")
-            safe_click(driver, login_btn)
-
-            def check_post_login(d):
-                url = (d.current_url or "").lower()
-                if "selectstore" in url:
-                    return "selectstore"
-                if "#/login" not in url:
-                    return "logged_in"
-                if len(d.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
-                    return "logged_in"
+            if stop_event and stop_event.is_set():
                 return False
 
-            post_state = wait.until(check_post_login)
-            if post_state == "selectstore":
-                log("  Store selection detected, confirming default store...")
-                time.sleep(1)
-                go_btns = driver.find_elements(By.XPATH, "//button[contains(normalize-space(),'Go') or contains(@ng-click,'chooseStore')]")
-                if go_btns:
-                    safe_click(driver, go_btns[0])
+            # Check if Cloudflare verification screen is active
+            cf_wait_start = time.time()
+            while time.time() - cf_wait_start < 45:
+                title = (d.title or "").strip().lower()
+                if "one moment" in title or "just a moment" in title or "checking your browser" in title or "verif" in title:
+                    log(f"  Cloudflare verification screen active ('{d.title}'), waiting for challenge...")
                     time.sleep(2)
+                else:
+                    break
 
-            log("  Login successful!")
-            time.sleep(2)
+            # Check if already authenticated
+            if "#/login" not in (d.current_url or "") and len(d.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
+                log("  Already logged in!")
+            else:
+                if "#/login" not in (d.current_url or ""):
+                    d.get(ERP_LOGIN_URL)
+                    time.sleep(1)
+                user_selectors = [
+                    (By.CSS_SELECTOR, "input[ng-model='form.email']"),
+                    (By.CSS_SELECTOR, "input[placeholder*='Email' i]"),
+                    (By.CSS_SELECTOR, "input[type='text'][ng-model*='email' i]"),
+                    (By.CSS_SELECTOR, "input[type='email']"),
+                    (By.NAME, "email"),
+                    (By.NAME, "username"),
+                    (By.NAME, "user"),
+                    (By.CSS_SELECTOR, "input[ng-model*='user' i]"),
+                    (By.XPATH, "(//input[@type='text' or @type='email' or not(@type)])[1]")
+                ]
+                user_in = find_element_by_selectors(d, user_selectors, timeout=20, condition="visible")
+                user_in.clear()
+                user_in.send_keys(username)
 
-        # 2. Open Fabric Stock page
-        log("[2/2] Opening Fabric Stock page...")
-        driver.get(ERP_FABRIC_STOCK_URL)
-        time.sleep(3)
+                pass_selectors = [
+                    (By.ID, "password"),
+                    (By.CSS_SELECTOR, "input[ng-model='form.password']"),
+                    (By.CSS_SELECTOR, "input[type='password']"),
+                    (By.NAME, "password"),
+                    (By.XPATH, "(//input[@type='password'])[1]")
+                ]
+                pass_in = find_element_by_selectors(d, pass_selectors, timeout=10, condition="visible")
+                pass_in.clear()
+                pass_in.send_keys(password)
+
+                login_btn = find_element_by_selectors(d, [
+                    (By.CSS_SELECTOR, "button[type='submit']"),
+                    (By.XPATH, "//button[contains(normalize-space(),'Login') or contains(@ng-click,'login')]"),
+                    (By.CSS_SELECTOR, ".login-btn-info")
+                ], timeout=10, condition="clickable")
+                safe_click(d, login_btn)
+
+                def check_post_login(drv):
+                    url = (drv.current_url or "").lower()
+                    if "selectstore" in url:
+                        return "selectstore"
+                    if "#/login" not in url:
+                        return "logged_in"
+                    if len(drv.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
+                        return "logged_in"
+                    return False
+
+                post_state = w.until(check_post_login)
+                if post_state == "selectstore":
+                    log("  Store selection detected, confirming default store...")
+                    time.sleep(1)
+                    go_btns = d.find_elements(By.XPATH, "//button[contains(normalize-space(),'Go') or contains(@ng-click,'chooseStore')]")
+                    if go_btns:
+                        safe_click(d, go_btns[0])
+                        time.sleep(2)
+
+                log("  Login successful!")
+                time.sleep(2)
+
+            # 2. Open Fabric Stock page
+            log("[2/2] Opening Fabric Stock page...")
+            d.get(ERP_FABRIC_STOCK_URL)
+            try:
+                w.until(lambda drv: len(drv.find_elements(By.XPATH, "//md-autocomplete")) >= 1)
+            except Exception:
+                pass
+            # Wait 4 seconds for Angular autocomplete cache to populate
+            time.sleep(4)
+            return True
+
+        def is_session_alive(drv):
+            try:
+                if drv is None:
+                    return False
+                _ = drv.current_url
+                return True
+            except Exception:
+                return False
+
+        # Initial login & navigation
+        if not connect_and_open_fabric_stock(driver, wait):
+            return False, "Failed initial setup"
 
         # 3. Process each Fabric item
         for idx, item in enumerate(fabric_items, start=1):
@@ -370,45 +409,68 @@ def run_batch_download(
             log(f"\n--- [{idx}/{total_items}] Processing: {item_desc} ---")
             set_progress(idx - 1, total_items)
 
+            # Auto-Session Recovery: Ensure session is alive before starting item
+            if not is_session_alive(driver):
+                log("  [RECOVERY] Chrome session disconnected or closed. Restarting Chrome and re-logging in...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                try:
+                    driver = setup_chrome_driver(dest_dir, headless=headless)
+                    wait = WebDriverWait(driver, 25)
+                    connect_and_open_fabric_stock(driver, wait)
+                except Exception as rec_err:
+                    log(f"  [RECOVERY ERROR] Could not restart browser: {rec_err}")
+
             try:
-                # 3a. Set Fabric Autocomplete
-                set_angular_autocomplete(driver, "Fabric", fab_name, timeout=10)
-
-                # 3b. Set Unit Autocomplete
-                set_angular_autocomplete(driver, "Unit", unit_name, timeout=8)
-
-                # 3c. Set GSM Autocomplete (or clear if not specified)
-                set_angular_autocomplete(driver, "GSM", gsm_val, timeout=8)
-
-                close_overlays(driver)
-                time.sleep(0.3)
-
-                # 3d. Click Search
-                search_btn = find_element_by_selectors(driver, [
-                    (By.XPATH, "//button[@aria-label='Search' or contains(@ng-click,'getReport') or contains(@title,'Search')]"),
-                    (By.XPATH, "//button[contains(@class,'btn-info') and (contains(@ng-click,'getReport') or @aria-label='Search')]")
-                ], timeout=10, condition="present")
-
-                before_files = set(dest_dir.glob("*"))
-                safe_click(driver, search_btn)
-
-                # 3e. Wait for stock report data rows
-                start_wait = time.time()
                 data_found = False
-                while time.time() - start_wait < 25:
-                    rows = driver.find_elements(By.XPATH, "//table//tr[td[2][string-length(normalize-space()) > 0 and not(contains(.,'Total')) and not(contains(.,'COLOR'))]]")
-                    if len(rows) >= 1:
-                        data_found = True
-                        log(f"  Stock data loaded ({len(rows)} color rows).")
-                        break
-                    
-                    page_src = driver.page_source.lower()
-                    if "no records found" in page_src or "no data found" in page_src:
-                        log("  No records found for this fabric.")
-                        break
-                    time.sleep(1)
+                for attempt in range(1, 3):
+                    # 3a. Set Fabric Autocomplete
+                    set_angular_autocomplete(driver, "Fabric", fab_name, timeout=12)
 
-                time.sleep(2)
+                    # 3b. Set Unit Autocomplete
+                    set_angular_autocomplete(driver, "Unit", unit_name, timeout=8)
+
+                    # 3c. Set GSM Autocomplete (or clear if not specified)
+                    set_angular_autocomplete(driver, "GSM", gsm_val, timeout=8)
+
+                    close_overlays(driver)
+                    time.sleep(0.4)
+
+                    # 3d. Click Search
+                    search_btn = find_element_by_selectors(driver, [
+                        (By.XPATH, "//button[@aria-label='Search' or contains(@ng-click,'getReport') or contains(@title,'Search')]"),
+                        (By.XPATH, "//button[contains(@class,'btn-info') and (contains(@ng-click,'getReport') or @aria-label='Search')]")
+                    ], timeout=10, condition="present")
+
+                    before_files = set(dest_dir.glob("*"))
+                    safe_click(driver, search_btn)
+
+                    # 3e. Wait for stock report data rows
+                    start_wait = time.time()
+                    wait_limit = 18 if attempt == 1 else 25
+                    while time.time() - start_wait < wait_limit:
+                        rows = driver.find_elements(By.XPATH, "//table//tr[td[2][string-length(normalize-space()) > 0 and not(contains(.,'Total')) and not(contains(.,'COLOR'))]]")
+                        if len(rows) >= 1:
+                            data_found = True
+                            log(f"  Stock data loaded ({len(rows)} color rows).")
+                            break
+                        
+                        page_src = driver.page_source.lower()
+                        if "no records found" in page_src or "no data found" in page_src:
+                            log("  No records found for this fabric.")
+                            break
+                        time.sleep(1)
+
+                    if data_found:
+                        break
+
+                    if attempt == 1:
+                        log("  [RETRY] Stock data not detected on first attempt. Re-checking dropdown selection & searching again...")
+                        time.sleep(1.5)
+
+                time.sleep(1)
 
                 # 3f. Click GREEN Excel export button (xlsxExportForFabricDetails)
                 green_btn = find_element_by_selectors(driver, [
@@ -452,6 +514,18 @@ def run_batch_download(
             except Exception as item_err:
                 log(f"  [ERROR] Failed to export {item_desc}: {str(item_err)}")
                 fail_count += 1
+                if not is_session_alive(driver):
+                    log("  [RECOVERY] Chrome session died during export. Restarting browser for subsequent items...")
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                    try:
+                        driver = setup_chrome_driver(dest_dir, headless=headless)
+                        wait = WebDriverWait(driver, 25)
+                        connect_and_open_fabric_stock(driver, wait)
+                    except Exception as rec_err:
+                        log(f"  [RECOVERY ERROR] Could not restart browser: {rec_err}")
 
             set_progress(idx, total_items)
             time.sleep(1)
