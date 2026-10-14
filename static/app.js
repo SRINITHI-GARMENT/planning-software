@@ -989,6 +989,7 @@ function switchTab(tabId) {
     const tabStockWip = document.getElementById('tab-stock-wip');
     const tabBalanceQty = document.getElementById('tab-balance-qty');
     const tabBaseStock = document.getElementById('tab-base-stock');
+    const tabFinishedGoodsVisibility = document.getElementById('tab-finished-goods-visibility');
     const tabPendingQtyPlanning = document.getElementById('tab-pending-qty-planning');
     const tabLeadDaysMaster = document.getElementById('tab-lead-days-master');
 
@@ -1007,6 +1008,7 @@ function switchTab(tabId) {
     const panelStockWip = document.getElementById('stock-wip-panel');
     const panelBalanceQty = document.getElementById('balance-qty-panel');
     const panelBaseStock = document.getElementById('base-stock-panel');
+    const panelFinishedGoodsVisibility = document.getElementById('finished-goods-visibility-panel');
     const panelPendingQtyPlanning = document.getElementById('pending-qty-planning-panel');
     const panelLeadDaysMaster = document.getElementById('lead-days-master-panel');
 
@@ -1026,6 +1028,7 @@ function switchTab(tabId) {
     if (tabStockWip) tabStockWip.classList.remove('active');
     if (tabBalanceQty) tabBalanceQty.classList.remove('active');
     if (tabBaseStock) tabBaseStock.classList.remove('active');
+    if (tabFinishedGoodsVisibility) tabFinishedGoodsVisibility.classList.remove('active');
     if (tabPendingQtyPlanning) tabPendingQtyPlanning.classList.remove('active');
     if (tabLeadDaysMaster) tabLeadDaysMaster.classList.remove('active');
 
@@ -1044,6 +1047,7 @@ function switchTab(tabId) {
     if (panelStockWip) panelStockWip.classList.add('hidden');
     if (panelBalanceQty) panelBalanceQty.classList.add('hidden');
     if (panelBaseStock) panelBaseStock.classList.add('hidden');
+    if (panelFinishedGoodsVisibility) panelFinishedGoodsVisibility.classList.add('hidden');
     if (panelPendingQtyPlanning) panelPendingQtyPlanning.classList.add('hidden');
     if (panelLeadDaysMaster) panelLeadDaysMaster.classList.add('hidden');
 
@@ -1110,6 +1114,12 @@ function switchTab(tabId) {
         if (tabBaseStock) tabBaseStock.classList.add('active');
         if (panelBaseStock) panelBaseStock.classList.remove('hidden');
         initializeBaseStockTab();
+    } else if (tabId === 'finished-goods-visibility') {
+        if (tabFinishedGoodsVisibility) tabFinishedGoodsVisibility.classList.add('active');
+        if (panelFinishedGoodsVisibility) panelFinishedGoodsVisibility.classList.remove('hidden');
+        if (typeof initializeFinishedGoodsVisibilityTab === 'function') {
+            initializeFinishedGoodsVisibilityTab();
+        }
     } else if (tabId === 'lead-days-master') {
         if (tabLeadDaysMaster) tabLeadDaysMaster.classList.add('active');
         if (panelLeadDaysMaster) panelLeadDaysMaster.classList.remove('hidden');

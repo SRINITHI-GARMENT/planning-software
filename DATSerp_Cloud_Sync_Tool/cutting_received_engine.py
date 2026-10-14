@@ -59,7 +59,12 @@ def find_element_by_selectors(driver, selectors, timeout=15, condition="present"
             except Exception as e:
                 last_error = e
         time.sleep(0.3)
-    raise TimeoutException(f"Could not locate element with selectors: {selectors}. Error: {last_error}")
+    current_url = getattr(driver, "current_url", "unknown")
+    page_title = getattr(driver, "title", "unknown")
+    raise TimeoutException(
+        f"Could not locate element with selectors: {selectors}. "
+        f"URL: '{current_url}', Title: '{page_title}'. Last error: {last_error}"
+    )
 
 
 def safe_click(driver, element):
@@ -91,14 +96,19 @@ def setup_chrome_driver(download_dir, headless=False):
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--disable-popup-blocking")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    # Hide automation flags
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    chrome_options.add_experimental_option("useAutomationExtension", False)
 
     if headless:
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--window-size=1920,1080")
 
     driver = webdriver.Chrome(options=chrome_options)
+
+
 
     # Enable downloads in headless mode via CDP
     try:
@@ -186,39 +196,82 @@ def run_cutting_received_download(
 
         # 1. Login
         log("[1/4] Connecting to DATSerp ERP & Logging in...")
-        driver.get(ERP_LOGIN_URL)
+        driver.get("https://erp.datserp.com/")
 
         if stop_event and stop_event.is_set():
             return False, "Cancelled by user"
 
-        user_selectors = [
-            (By.NAME, "username"),
-            (By.NAME, "user"),
-            (By.CSS_SELECTOR, "input[type='text'][ng-model*='user' i]"),
-            (By.XPATH, "//input[@type='text' or not(@type)][1]")
-        ]
-        user_in = find_element_by_selectors(driver, user_selectors, timeout=20, condition="visible")
-        user_in.clear()
-        user_in.send_keys(username)
+        # Check if Cloudflare verification screen is active
+        cf_wait_start = time.time()
+        while time.time() - cf_wait_start < 45:
+            title = (driver.title or "").strip().lower()
+            if "one moment" in title or "just a moment" in title or "checking your browser" in title or "verif" in title:
+                log(f"  Cloudflare verification screen active ('{driver.title}'), waiting for challenge...")
+                time.sleep(2)
+            else:
+                break
 
-        pass_selectors = [
-            (By.NAME, "password"),
-            (By.CSS_SELECTOR, "input[type='password']"),
-            (By.XPATH, "//input[@type='password']")
-        ]
-        pass_in = find_element_by_selectors(driver, pass_selectors, timeout=10, condition="visible")
-        pass_in.clear()
-        pass_in.send_keys(password)
+        # Check if already authenticated
+        if "#/login" not in (driver.current_url or "") and len(driver.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
+            log("  Already logged in!")
+        else:
+            if "#/login" not in (driver.current_url or ""):
+                driver.get(ERP_LOGIN_URL)
+                time.sleep(1)
+            user_selectors = [
+                (By.CSS_SELECTOR, "input[ng-model='form.email']"),
+                (By.CSS_SELECTOR, "input[placeholder*='Email' i]"),
+                (By.CSS_SELECTOR, "input[type='text'][ng-model*='email' i]"),
+                (By.CSS_SELECTOR, "input[type='email']"),
+                (By.NAME, "email"),
+                (By.NAME, "username"),
+                (By.NAME, "user"),
+                (By.CSS_SELECTOR, "input[ng-model*='user' i]"),
+                (By.XPATH, "(//input[@type='text' or @type='email' or not(@type)])[1]")
+            ]
+            user_in = find_element_by_selectors(driver, user_selectors, timeout=20, condition="visible")
+            user_in.clear()
+            user_in.send_keys(username)
 
-        login_btn = find_element_by_selectors(driver, [
-            (By.CSS_SELECTOR, "button[type='submit']"),
-            (By.XPATH, "//button[contains(normalize-space(),'Login') or contains(@ng-click,'login')]")
-        ], timeout=10, condition="clickable")
-        safe_click(driver, login_btn)
+            pass_selectors = [
+                (By.ID, "password"),
+                (By.CSS_SELECTOR, "input[ng-model='form.password']"),
+                (By.CSS_SELECTOR, "input[type='password']"),
+                (By.NAME, "password"),
+                (By.XPATH, "(//input[@type='password'])[1]")
+            ]
+            pass_in = find_element_by_selectors(driver, pass_selectors, timeout=10, condition="visible")
+            pass_in.clear()
+            pass_in.send_keys(password)
 
-        wait.until(lambda d: "#/login" not in d.current_url or len(d.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0)
-        log("  Login successful!")
-        time.sleep(2)
+            login_btn = find_element_by_selectors(driver, [
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.XPATH, "//button[contains(normalize-space(),'Login') or contains(@ng-click,'login')]"),
+                (By.CSS_SELECTOR, ".login-btn-info")
+            ], timeout=10, condition="clickable")
+            safe_click(driver, login_btn)
+
+            def check_post_login(d):
+                url = (d.current_url or "").lower()
+                if "selectstore" in url:
+                    return "selectstore"
+                if "#/login" not in url:
+                    return "logged_in"
+                if len(d.find_elements(By.CSS_SELECTOR, ".main-content, .navbar, .sidebar, #page-wrapper, .dashboard")) > 0:
+                    return "logged_in"
+                return False
+
+            post_state = wait.until(check_post_login)
+            if post_state == "selectstore":
+                log("  Store selection detected, confirming default store...")
+                time.sleep(1)
+                go_btns = driver.find_elements(By.XPATH, "//button[contains(normalize-space(),'Go') or contains(@ng-click,'chooseStore')]")
+                if go_btns:
+                    safe_click(driver, go_btns[0])
+                    time.sleep(2)
+
+            log("  Login successful!")
+            time.sleep(2)
 
         if stop_event and stop_event.is_set():
             return False, "Cancelled by user"

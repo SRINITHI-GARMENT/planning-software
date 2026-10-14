@@ -272,6 +272,10 @@
                         <i class="fa-solid fa-cubes-stacked"></i>
                         <span>Base Stock</span>
                     </button>
+                    <button id="tab-finished-goods-visibility" class="nav-tab-btn" onclick="switchTab('finished-goods-visibility')">
+                        <i class="fa-solid fa-warehouse"></i>
+                        <span>Finished Goods Visibility</span>
+                    </button>
                     <button id="tab-stock-wip" class="nav-tab-btn" onclick="switchTab('stock-wip')">
                         <i class="fa-solid fa-boxes-stacked"></i>
                         <span>Stock / WIP / Pending Order</span>
@@ -3340,6 +3344,139 @@
                             <!-- Product/Group-wise Sections Container -->
                             <div class="card-body" style="padding: 16px; display: flex; flex-direction: column; gap: 24px;" id="fg-table-sections-container">
                                 <!-- Dynamic separate sections per Product / Group rendered here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FINISHED GOODS VISIBILITY PANEL -->
+                    <div id="finished-goods-visibility-panel" class="tab-panel hidden">
+                        <div class="contribution-filter-bar" style="margin-bottom: 20px;">
+                            <div class="section-title">
+                                <h3><i class="fa-solid fa-warehouse"></i> Finished Goods Visibility</h3>
+                                <p>View FG Stock, WIP Quantity, Pending Orders and Balance Stock for Stand Alone and Common Production Products.</p>
+                            </div>
+                            <div class="period-selectors" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="loadFgvData(true)">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                    <span>Refresh Data</span>
+                                </button>
+                                <button class="btn btn-outline" onclick="exportFgvExcel()">
+                                    <i class="fa-solid fa-file-export"></i>
+                                    <span>Export Excel</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Controls Bar: Consider Checkboxes & Filters -->
+                        <div class="card" style="margin-bottom: 20px; padding: 16px;">
+                            <div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+                                <!-- Consider Checkboxes -->
+                                <div style="display: flex; align-items: center; gap: 14px; background: rgba(255, 255, 255, 0.03); padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                                    <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted);">
+                                        <i class="fa-solid fa-sliders"></i> Consider Options:
+                                    </span>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;">
+                                        <input type="checkbox" id="fgv-consider-fg" checked onchange="onFgvConsiderChange()" style="accent-color: var(--accent-blue); width: 16px; height: 16px; cursor: pointer;">
+                                        <span>FG Stock</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;">
+                                        <input type="checkbox" id="fgv-consider-wip" checked onchange="onFgvConsiderChange()" style="accent-color: var(--accent-blue); width: 16px; height: 16px; cursor: pointer;">
+                                        <span>WIP Qty</span>
+                                    </label>
+                                </div>
+
+                                <!-- SKU Search -->
+                                <div style="position: relative; min-width: 240px; flex-grow: 1; max-width: 380px;">
+                                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 12px; font-size: 12px; color: var(--text-muted);"></i>
+                                    <input type="text" id="fgv-search-input" class="form-control" placeholder="Search SKU, Product, Group..." oninput="onFgvSearchInput(this.value)" style="height: 38px; padding-left: 34px; width: 100%;">
+                                </div>
+                            </div>
+
+                            <!-- Dropdown Filters -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                                <div>
+                                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Brand</label>
+                                    <select id="fgv-filter-brand" class="form-control" onchange="onFgvFilterChange()" style="width: 100%; height: 38px;">
+                                        <option value="">All Brands</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Category</label>
+                                    <select id="fgv-filter-category" class="form-control" onchange="onFgvFilterChange()" style="width: 100%; height: 38px;">
+                                        <option value="">All Categories</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Product / Common Group</label>
+                                    <select id="fgv-filter-product" class="form-control" onchange="onFgvFilterChange()" style="width: 100%; height: 38px;">
+                                        <option value="">All Products / Groups</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Color</label>
+                                    <select id="fgv-filter-color" class="form-control" onchange="onFgvFilterChange()" style="width: 100%; height: 38px;">
+                                        <option value="">All Colors</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;">Size</label>
+                                    <select id="fgv-filter-size" class="form-control" onchange="onFgvFilterChange()" style="width: 100%; height: 38px;">
+                                        <option value="">All Sizes</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Table Card -->
+                        <div class="card" style="padding: 0; overflow: hidden; position: relative; min-height: 420px;">
+                            <!-- Loader Overlay -->
+                            <div id="fgv-loader" class="table-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(19, 24, 37, 0.85); z-index: 50; flex-direction: column; justify-content: center; align-items: center; gap: 12px;">
+                                <div class="spinner"></div>
+                                <span style="font-weight: 600; color: var(--text-primary); font-size: 14px;">Loading Finished Goods Visibility Data...</span>
+                            </div>
+
+                            <!-- Empty State -->
+                            <div id="fgv-empty-state" class="hidden" style="padding: 60px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
+                                <i class="fa-solid fa-boxes-packing" style="font-size: 40px; color: var(--text-muted); opacity: 0.5;"></i>
+                                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">No Products Found</div>
+                                <div style="font-size: 13px; color: var(--text-muted); max-width: 450px;">No products or stock records match the selected filter criteria.</div>
+                            </div>
+
+                            <!-- Table Scroll Container -->
+                            <div class="table-container" style="overflow-x: auto; max-height: calc(100vh - 350px);">
+                                <table id="fgv-table" class="data-table" style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 60px; text-align: center;">Details</th>
+                                            <th>Brand</th>
+                                            <th>Category</th>
+                                            <th>Product / Common Group</th>
+                                            <th>Fabric Name</th>
+                                            <th>Color</th>
+                                            <th>Size</th>
+                                            <th style="text-align: right;">FG Stock</th>
+                                            <th style="text-align: right;">WIP Qty</th>
+                                            <th style="text-align: right;">Pending Qty</th>
+                                            <th style="text-align: right;">BAL STOCK</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fgv-table-tbody">
+                                        <!-- Dynamically populated rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Pagination Footer -->
+                            <div class="pagination-container" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.02);">
+                                <span id="fgv-pagination-info" style="font-size: 13px; color: var(--text-secondary);">Showing 0 items</span>
+                                <div style="display: flex; gap: 8px;">
+                                    <button id="fgv-btn-prev" class="btn btn-outline btn-sm" onclick="fgvChangePage(-1)">
+                                        <i class="fa-solid fa-chevron-left"></i> Previous
+                                    </button>
+                                    <button id="fgv-btn-next" class="btn btn-outline btn-sm" onclick="fgvChangePage(1)">
+                                        Next <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -7271,6 +7408,7 @@
 
     <script src="components/MultiSelectFilter.js"></script>
     <script src="app.js?v=3.3"></script>
+    <script src="finished-goods-visibility.js"></script>
 </body>
 
 </html>

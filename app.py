@@ -12604,6 +12604,648 @@ def api_base_stock_fabric_req_data():
 def api_base_stock_fabric_req_details():
     return get_fabric_req_details()
 
+# =====================================================================
+# FINISHED GOODS VISIBILITY MODULE APIS (STRICT READ-ONLY)
+# =====================================================================
+from decimal import Decimal
+
+@app.route('/finished-goods-visibility-detail')
+def finished_goods_visibility_detail():
+    return send_from_directory(app.static_folder, 'finished-goods-visibility-detail.html')
+
+@app.route('/api/finished-goods-visibility/filter-options', methods=['GET'])
+@login_required
+def api_fgv_filter_options():
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT DISTINCT brand_name FROM brand_master WHERE status = 'Active' ORDER BY brand_name;")
+        brands = [r[0] for r in cur.fetchall() if r[0]]
+
+        cur.execute("SELECT DISTINCT product_type FROM product_master WHERE status = 'Active' AND product_type IS NOT NULL AND product_type <> '' ORDER BY product_type;")
+        categories = [r[0] for r in cur.fetchall() if r[0]]
+
+        cur.execute("""
+            SELECT 'standalone' as type, id, product_name as name 
+            FROM product_master 
+            WHERE status = 'Active' AND (common_production_id IS NULL OR common_production_id = 0)
+            UNION ALL
+            SELECT 'common' as type, id, common_production_name as name
+            FROM common_production_master
+            WHERE status = 'Active'
+            ORDER BY name;
+        """)
+        products = [{'type': r[0], 'id': r[1], 'name': r[2]} for r in cur.fetchall()]
+
+        cur.execute("SELECT DISTINCT display_color FROM color_master WHERE status = 'Active' ORDER BY display_color;")
+        colors = [r[0] for r in cur.fetchall() if r[0]]
+
+        cur.execute("SELECT size FROM size_master WHERE status = 'Active' ORDER BY id ASC;")
+        sizes = [r[0] for r in cur.fetchall() if r[0]]
+
+        cur.close()
+        return jsonify({
+            'success': True,
+            'data': {
+                'brands': brands,
+                'categories': categories,
+                'products': products,
+                'colors': colors,
+                'sizes': sizes
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error fetching FGV filter options: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if conn:
+            release_db_connection(conn)
+
+@app.route('/api/finished-goods-visibility/data', methods=['GET'])
+@login_required
+def api_fgv_data():
+    conn = None
+    try:
+        brand = request.args.get('brand', '').strip()
+        category = request.args.get('category', '').strip()
+        product = request.args.get('product', '').strip()
+        color = request.args.get('color', '').strip()
+        size = request.args.get('size', '').strip()
+        search = request.args.get('search', '').strip()
+        try:
+            page = max(1, int(request.args.get('page', 1)))
+        except:
+            page = 1
+        try:
+            per_page = max(1, int(request.args.get('per_page', 50)))
+        except:
+            per_page = 50
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        full_query = """
+            WITH fg_data AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, 
+                       LOWER(TRIM(color)) as c_key, 
+                       MAX(TRIM(color)) as color,
+                       LOWER(TRIM(size)) as s_key, 
+                       MAX(UPPER(TRIM(size))) as size,
+                       SUM(qty) as fg_qty
+                FROM finished_goods 
+                WHERE validation_status = 'VALID'
+                GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size))
+            ),
+            wip_data AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, 
+                       LOWER(TRIM(color)) as c_key, 
+                       MAX(TRIM(color)) as color,
+                       LOWER(TRIM(size)) as s_key, 
+                       MAX(UPPER(TRIM(size))) as size,
+                       SUM(qty) as wip_qty
+                FROM production_wip 
+                WHERE validation_status = 'VALID'
+                GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size))
+            ),
+            po_data AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, 
+                       LOWER(TRIM(color)) as c_key, 
+                       MAX(TRIM(color)) as color,
+                       LOWER(TRIM(size)) as s_key, 
+                       MAX(UPPER(TRIM(size))) as size,
+                       SUM(qty) as po_qty
+                FROM pending_orders 
+                WHERE validation_status = 'VALID'
+                GROUP BY LOWER(TRIM(product_name)), LOWER(TRIM(color)), LOWER(TRIM(size))
+            ),
+            member_prods AS (
+                SELECT p.common_production_id, 
+                       LOWER(TRIM(p.product_name)) as p_key, 
+                       p.product_type, 
+                       b.brand_name
+                FROM product_master p
+                JOIN brand_master b ON p.brand_id = b.id
+                WHERE p.status = 'Active' AND p.common_production_id IS NOT NULL AND p.common_production_id > 0
+            ),
+            fg_mem_sku AS (
+                SELECT mp.common_production_id, 
+                       LOWER(TRIM(fg.color)) as c_key, 
+                       MAX(TRIM(fg.color)) as color,
+                       LOWER(TRIM(fg.size)) as s_key, 
+                       MAX(UPPER(TRIM(fg.size))) as size,
+                       SUM(fg.qty) as fg_qty
+                FROM finished_goods fg
+                JOIN member_prods mp ON LOWER(TRIM(fg.product_name)) = mp.p_key
+                WHERE fg.validation_status = 'VALID'
+                GROUP BY mp.common_production_id, LOWER(TRIM(fg.color)), LOWER(TRIM(fg.size))
+            ),
+            wip_grp_sku AS (
+                SELECT cpm.id as common_production_id, 
+                       LOWER(TRIM(w.color)) as c_key, 
+                       MAX(TRIM(w.color)) as color,
+                       LOWER(TRIM(w.size)) as s_key, 
+                       MAX(UPPER(TRIM(w.size))) as size,
+                       SUM(w.qty) as wip_qty
+                FROM production_wip w
+                JOIN common_production_master cpm ON LOWER(TRIM(w.product_name)) = LOWER(TRIM(cpm.common_production_name))
+                WHERE w.validation_status = 'VALID'
+                GROUP BY cpm.id, LOWER(TRIM(w.color)), LOWER(TRIM(w.size))
+            ),
+            po_mem_sku AS (
+                SELECT mp.common_production_id, 
+                       LOWER(TRIM(po.color)) as c_key, 
+                       MAX(TRIM(po.color)) as color,
+                       LOWER(TRIM(po.size)) as s_key, 
+                       MAX(UPPER(TRIM(po.size))) as size,
+                       SUM(po.qty) as po_qty
+                FROM pending_orders po
+                JOIN member_prods mp ON LOWER(TRIM(po.product_name)) = mp.p_key
+                WHERE po.validation_status = 'VALID'
+                GROUP BY mp.common_production_id, LOWER(TRIM(po.color)), LOWER(TRIM(po.size))
+            ),
+            sa_combos AS (
+                SELECT p_key, c_key, MAX(color) as color, s_key, MAX(size) as size FROM (
+                    SELECT p_key, c_key, color, s_key, size FROM fg_data
+                    UNION ALL
+                    SELECT p_key, c_key, color, s_key, size FROM wip_data
+                    UNION ALL
+                    SELECT p_key, c_key, color, s_key, size FROM po_data
+                ) sub GROUP BY p_key, c_key, s_key
+            ),
+            cp_combos AS (
+                SELECT common_production_id, c_key, MAX(color) as color, s_key, MAX(size) as size FROM (
+                    SELECT common_production_id, c_key, color, s_key, size FROM fg_mem_sku
+                    UNION ALL
+                    SELECT common_production_id, c_key, color, s_key, size FROM wip_grp_sku
+                    UNION ALL
+                    SELECT common_production_id, c_key, color, s_key, size FROM po_mem_sku
+                ) sub GROUP BY common_production_id, c_key, s_key
+            ),
+            standalone_rows AS (
+                SELECT p.id, 'standalone' as entity_type, b.brand_name as brand, p.product_type as category, 
+                       p.product_name, f.fabric_name, c.color, c.size,
+                       COALESCE(fg.fg_qty, 0) as fg_stock,
+                       COALESCE(wip.wip_qty, 0) as wip_qty,
+                       COALESCE(po.po_qty, 0) as pending_qty,
+                       0 as member_count,
+                       '' as common_production_name
+                FROM sa_combos c
+                JOIN product_master p ON c.p_key = LOWER(TRIM(p.product_name))
+                JOIN brand_master b ON p.brand_id = b.id
+                JOIN fabric_master f ON p.fabric_id = f.id
+                LEFT JOIN fg_data fg ON c.p_key = fg.p_key AND c.c_key = fg.c_key AND c.s_key = fg.s_key
+                LEFT JOIN wip_data wip ON c.p_key = wip.p_key AND c.c_key = wip.c_key AND c.s_key = wip.s_key
+                LEFT JOIN po_data po ON c.p_key = po.p_key AND c.c_key = po.c_key AND c.s_key = po.s_key
+                WHERE p.status = 'Active' AND (p.common_production_id IS NULL OR p.common_production_id = 0)
+            ),
+            common_rows AS (
+                SELECT cpm.id, 'common' as entity_type, '-' as brand, 
+                       COALESCE(MIN(mp.product_type), 'Core Product') as category,
+                       cpm.common_production_name as product_name, 
+                       COALESCE(f.fabric_name, '-') as fabric_name,
+                       c.color, c.size,
+                       COALESCE(fg.fg_qty, 0) as fg_stock,
+                       COALESCE(wip.wip_qty, 0) as wip_qty,
+                       COALESCE(po.po_qty, 0) as pending_qty,
+                       COUNT(DISTINCT mp.p_key) as member_count,
+                       cpm.common_production_name
+                FROM cp_combos c
+                JOIN common_production_master cpm ON c.common_production_id = cpm.id
+                LEFT JOIN fabric_master f ON cpm.fabric_id = f.id
+                LEFT JOIN member_prods mp ON cpm.id = mp.common_production_id
+                LEFT JOIN fg_mem_sku fg ON c.common_production_id = fg.common_production_id AND c.c_key = fg.c_key AND c.s_key = fg.s_key
+                LEFT JOIN wip_grp_sku wip ON c.common_production_id = wip.common_production_id AND c.c_key = wip.c_key AND c.s_key = wip.s_key
+                LEFT JOIN po_mem_sku po ON c.common_production_id = po.common_production_id AND c.c_key = po.c_key AND c.s_key = po.s_key
+                WHERE cpm.status = 'Active'
+                GROUP BY cpm.id, cpm.common_production_name, f.fabric_name, c.color, c.size, fg.fg_qty, wip.wip_qty, po.po_qty
+            ),
+            combined AS (
+                SELECT * FROM standalone_rows
+                UNION ALL
+                SELECT * FROM common_rows
+            )
+            SELECT * FROM combined
+            WHERE 1=1
+        """
+        params = []
+
+        if brand:
+            full_query += " AND (brand = %s OR (entity_type = 'common' AND id IN (SELECT common_production_id FROM product_master p JOIN brand_master b ON p.brand_id = b.id WHERE b.brand_name = %s)))"
+            params.extend([brand, brand])
+
+        if category:
+            full_query += " AND category = %s"
+            params.append(category)
+
+        if product:
+            full_query += " AND product_name = %s"
+            params.append(product)
+
+        if color:
+            full_query += " AND LOWER(TRIM(color)) = %s"
+            params.append(color.lower())
+
+        if size:
+            full_query += " AND LOWER(TRIM(size)) = %s"
+            params.append(size.lower())
+
+        if search:
+            s_pat = f"%{search}%"
+            full_query += " AND (product_name ILIKE %s OR fabric_name ILIKE %s OR brand ILIKE %s OR color ILIKE %s OR size ILIKE %s)"
+            params.extend([s_pat, s_pat, s_pat, s_pat, s_pat])
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM ({full_query}) as sub;"
+        cur.execute(count_query, tuple(params))
+        total_count = cur.fetchone()[0]
+
+        # Order & Paginate
+        full_query += " ORDER BY product_name ASC, color ASC, size ASC LIMIT %s OFFSET %s;"
+        offset = (page - 1) * per_page
+        cur.execute(full_query, tuple(params + [per_page, offset]))
+
+        cols = [
+            'id', 'entity_type', 'brand', 'category', 'product_name', 'fabric_name', 
+            'color', 'size', 'fg_stock', 'wip_qty', 'pending_qty', 'member_count', 
+            'common_production_name'
+        ]
+
+        rows = []
+        for r in cur.fetchall():
+            row_dict = {}
+            for col, val in zip(cols, r):
+                if isinstance(val, Decimal):
+                    row_dict[col] = float(val)
+                else:
+                    row_dict[col] = val
+            rows.append(row_dict)
+
+        cur.close()
+        return jsonify({
+            'success': True,
+            'rows': rows,
+            'total_count': total_count,
+            'page': page,
+            'per_page': per_page
+        })
+    except Exception as e:
+        logger.error(f"Error fetching FGV data: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if conn:
+            release_db_connection(conn)
+
+@app.route('/api/finished-goods-visibility/members', methods=['GET'])
+@login_required
+def api_fgv_members():
+    conn = None
+    try:
+        cp_id = request.args.get('common_production_id', '').strip()
+        cp_name = request.args.get('name', '').strip()
+        color = request.args.get('color', '').strip()
+        size = request.args.get('size', '').strip()
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        where_cond = "p.status = 'Active'"
+        params = []
+        if cp_id and cp_id.isdigit():
+            where_cond += " AND p.common_production_id = %s"
+            params.append(int(cp_id))
+        elif cp_name:
+            where_cond += " AND LOWER(TRIM(cpm.common_production_name)) = LOWER(TRIM(%s))"
+            params.append(cp_name)
+        else:
+            return jsonify({'success': False, 'message': 'Missing common_production_id or name'}), 400
+
+        # Build CTEs with optional color & size filter
+        fg_filter = "validation_status = 'VALID'"
+        wip_filter = "validation_status = 'VALID'"
+        po_filter = "validation_status = 'VALID'"
+        f_params = []
+        w_params = []
+        p_params = []
+        if color:
+            fg_filter += " AND LOWER(TRIM(color)) = %s"
+            wip_filter += " AND LOWER(TRIM(color)) = %s"
+            po_filter += " AND LOWER(TRIM(color)) = %s"
+            f_params.append(color.lower())
+            w_params.append(color.lower())
+            p_params.append(color.lower())
+        if size:
+            fg_filter += " AND LOWER(TRIM(size)) = %s"
+            wip_filter += " AND LOWER(TRIM(size)) = %s"
+            po_filter += " AND LOWER(TRIM(size)) = %s"
+            f_params.append(size.lower())
+            w_params.append(size.lower())
+            p_params.append(size.lower())
+
+        query = f"""
+            WITH fg_agg AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, SUM(qty) as fg_qty
+                FROM finished_goods
+                WHERE {fg_filter}
+                GROUP BY LOWER(TRIM(product_name))
+            ),
+            wip_agg AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, SUM(qty) as wip_qty
+                FROM production_wip
+                WHERE {wip_filter}
+                GROUP BY LOWER(TRIM(product_name))
+            ),
+            po_agg AS (
+                SELECT LOWER(TRIM(product_name)) as p_key, SUM(qty) as po_qty
+                FROM pending_orders
+                WHERE {po_filter}
+                GROUP BY LOWER(TRIM(product_name))
+            )
+            SELECT p.id, b.brand_name, p.product_type as category, p.product_name, f.fabric_name,
+                   COALESCE(fg.fg_qty, 0) as fg_stock,
+                   COALESCE(wip.wip_qty, 0) as wip_qty,
+                   COALESCE(po.po_qty, 0) as pending_qty
+            FROM product_master p
+            JOIN common_production_master cpm ON p.common_production_id = cpm.id
+            JOIN brand_master b ON p.brand_id = b.id
+            JOIN fabric_master f ON p.fabric_id = f.id
+            LEFT JOIN fg_agg fg ON LOWER(TRIM(p.product_name)) = fg.p_key
+            LEFT JOIN wip_agg wip ON LOWER(TRIM(p.product_name)) = wip.p_key
+            LEFT JOIN po_agg po ON LOWER(TRIM(p.product_name)) = po.p_key
+            WHERE {where_cond}
+            ORDER BY p.product_name ASC;
+        """
+        all_params = f_params + w_params + p_params + params
+        cur.execute(query, tuple(all_params))
+        raw_members = cur.fetchall()
+
+        members = []
+        for r in raw_members:
+            members.append({
+                'id': r[0],
+                'brand': r[1],
+                'category': r[2],
+                'product_name': r[3],
+                'fabric_name': r[4],
+                'fg_stock': float(r[5]) if isinstance(r[5], Decimal) else r[5],
+                'wip_qty': float(r[6]) if isinstance(r[6], Decimal) else r[6],
+                'pending_qty': float(r[7]) if isinstance(r[7], Decimal) else r[7]
+            })
+
+        # If specific color/size requested, only return active contributors (or all if all 0)
+        if color or size:
+            active_members = [m for m in members if m['fg_stock'] > 0 or m['wip_qty'] > 0 or m['pending_qty'] > 0]
+            if active_members:
+                members = active_members
+
+        cur.close()
+        return jsonify({'success': True, 'members': members})
+    except Exception as e:
+        logger.error(f"Error fetching FGV common group members: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if conn:
+            release_db_connection(conn)
+
+@app.route('/api/finished-goods-visibility/matrix', methods=['GET'])
+@login_required
+def api_fgv_matrix():
+    conn = None
+    try:
+        entity_type = request.args.get('entity_type', 'standalone').strip().lower()
+        entity_id = request.args.get('id', '').strip()
+        entity_name = request.args.get('name', '').strip()
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        entity_info = {'name': entity_name, 'type': entity_type, 'member_products': []}
+
+        # Master size sequence
+        cur.execute("SELECT size FROM size_master WHERE status = 'Active' ORDER BY id ASC;")
+        master_sizes = [r[0] for r in cur.fetchall() if r[0]]
+
+        if entity_type == 'common':
+            # Resolve common production master info & active members
+            cur.execute("""
+                SELECT cpm.id, cpm.common_production_name, f.fabric_name
+                FROM common_production_master cpm
+                LEFT JOIN fabric_master f ON cpm.fabric_id = f.id
+                WHERE (cpm.id = %s OR LOWER(TRIM(cpm.common_production_name)) = LOWER(TRIM(%s))) AND cpm.status = 'Active';
+            """, (int(entity_id) if entity_id.isdigit() else -1, entity_name))
+            cpm_row = cur.fetchone()
+            if cpm_row:
+                entity_info['id'] = cpm_row[0]
+                entity_info['name'] = cpm_row[1]
+                entity_info['fabric_name'] = cpm_row[2] or '-'
+
+            # Get member products
+            cur.execute("""
+                SELECT p.id, p.product_name, b.brand_name, p.product_type
+                FROM product_master p
+                JOIN common_production_master cpm ON p.common_production_id = cpm.id
+                LEFT JOIN brand_master b ON p.brand_id = b.id
+                WHERE (cpm.id = %s OR LOWER(TRIM(cpm.common_production_name)) = LOWER(TRIM(%s))) AND p.status = 'Active'
+                ORDER BY p.product_name ASC;
+            """, (int(entity_id) if entity_id.isdigit() else -1, entity_name))
+            m_rows = cur.fetchall()
+            member_products = []
+            for mr in m_rows:
+                member_products.append({
+                    'id': mr[0],
+                    'product_name': mr[1],
+                    'brand': mr[2] or '-',
+                    'category': mr[3] or '-'
+                })
+            entity_info['member_products'] = member_products
+            member_names = [m['product_name'] for m in member_products]
+
+            # Common group aggregate matrix query
+            cur.execute("""
+                WITH fg_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM finished_goods
+                    WHERE LOWER(TRIM(product_name)) = ANY(%s) AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                wip_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM production_wip
+                    WHERE (LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) OR LOWER(TRIM(product_name)) = ANY(%s))
+                      AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                po_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM pending_orders
+                    WHERE LOWER(TRIM(product_name)) = ANY(%s) AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                all_combos AS (
+                    SELECT color, size FROM fg_data
+                    UNION
+                    SELECT color, size FROM wip_data
+                    UNION
+                    SELECT color, size FROM po_data
+                )
+                SELECT ac.color, ac.size,
+                       COALESCE(fg.qty, 0) as fg_stock,
+                       COALESCE(wip.qty, 0) as wip_qty,
+                       COALESCE(po.qty, 0) as pending_qty
+                FROM all_combos ac
+                LEFT JOIN fg_data fg ON ac.color = fg.color AND ac.size = fg.size
+                LEFT JOIN wip_data wip ON ac.color = wip.color AND ac.size = wip.size
+                LEFT JOIN po_data po ON ac.color = po.color AND ac.size = po.size;
+            """, ([m.lower().strip() for m in member_names], entity_name, [m.lower().strip() for m in member_names], [m.lower().strip() for m in member_names]))
+            raw_cells = cur.fetchall()
+
+            # Member-specific matrices
+            member_cells = {}
+            for m_name in member_names:
+                cur.execute("""
+                    WITH fg_data AS (
+                        SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                        FROM finished_goods
+                        WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                        GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                    ),
+                    wip_data AS (
+                        SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                        FROM production_wip
+                        WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                        GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                    ),
+                    po_data AS (
+                        SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                        FROM pending_orders
+                        WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                        GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                    ),
+                    all_combos AS (
+                        SELECT color, size FROM fg_data
+                        UNION
+                        SELECT color, size FROM wip_data
+                        UNION
+                        SELECT color, size FROM po_data
+                    )
+                    SELECT ac.color, ac.size,
+                           COALESCE(fg.qty, 0) as fg_stock,
+                           COALESCE(wip.qty, 0) as wip_qty,
+                           COALESCE(po.qty, 0) as pending_qty
+                    FROM all_combos ac
+                    LEFT JOIN fg_data fg ON ac.color = fg.color AND ac.size = fg.size
+                    LEFT JOIN wip_data wip ON ac.color = wip.color AND ac.size = wip.size
+                    LEFT JOIN po_data po ON ac.color = po.color AND ac.size = po.size;
+                """, (m_name, m_name, m_name))
+                m_map = {}
+                for mr in cur.fetchall():
+                    m_map[f"{mr[0]}__{mr[1]}"] = {
+                        'fg_stock': float(mr[2]) if isinstance(mr[2], Decimal) else mr[2],
+                        'wip_qty': float(mr[3]) if isinstance(mr[3], Decimal) else mr[3],
+                        'pending_qty': float(mr[4]) if isinstance(mr[4], Decimal) else mr[4]
+                    }
+                member_cells[m_name] = m_map
+
+        else: # standalone
+            member_cells = {}
+            cur.execute("""
+                SELECT p.id, p.product_name, b.brand_name, p.product_type, f.fabric_name
+                FROM product_master p
+                JOIN brand_master b ON p.brand_id = b.id
+                JOIN fabric_master f ON p.fabric_id = f.id
+                WHERE (p.id = %s OR LOWER(TRIM(p.product_name)) = LOWER(TRIM(%s))) AND p.status = 'Active';
+            """, (int(entity_id) if entity_id.isdigit() else -1, entity_name))
+            p_row = cur.fetchone()
+            if p_row:
+                entity_info['id'] = p_row[0]
+                entity_info['name'] = p_row[1]
+                entity_info['brand'] = p_row[2] or '-'
+                entity_info['category'] = p_row[3] or '-'
+                entity_info['fabric_name'] = p_row[4] or '-'
+
+            cur.execute("""
+                WITH fg_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM finished_goods
+                    WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                wip_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM production_wip
+                    WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                po_data AS (
+                    SELECT LOWER(TRIM(color)) as color, LOWER(TRIM(size)) as size, SUM(qty) as qty
+                    FROM pending_orders
+                    WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(%s)) AND validation_status = 'VALID'
+                    GROUP BY LOWER(TRIM(color)), LOWER(TRIM(size))
+                ),
+                all_combos AS (
+                    SELECT color, size FROM fg_data
+                    UNION
+                    SELECT color, size FROM wip_data
+                    UNION
+                    SELECT color, size FROM po_data
+                )
+                SELECT ac.color, ac.size,
+                       COALESCE(fg.qty, 0) as fg_stock,
+                       COALESCE(wip.qty, 0) as wip_qty,
+                       COALESCE(po.qty, 0) as pending_qty
+                FROM all_combos ac
+                LEFT JOIN fg_data fg ON ac.color = fg.color AND ac.size = fg.size
+                LEFT JOIN wip_data wip ON ac.color = wip.color AND ac.size = wip.size
+                LEFT JOIN po_data po ON ac.color = po.color AND ac.size = po.size;
+            """, (entity_name, entity_name, entity_name))
+            raw_cells = cur.fetchall()
+
+        # Build cells map, unique sizes and colors
+        cells_map = {}
+        unique_colors_set = set()
+        unique_sizes_set = set()
+
+        for r in raw_cells:
+            col = r[0].strip()
+            sz = r[1].strip()
+            unique_colors_set.add(col)
+            unique_sizes_set.add(sz)
+            cells_map[f"{col}__{sz}"] = {
+                'fg_stock': float(r[2]) if isinstance(r[2], Decimal) else r[2],
+                'wip_qty': float(r[3]) if isinstance(r[3], Decimal) else r[3],
+                'pending_qty': float(r[4]) if isinstance(r[4], Decimal) else r[4]
+            }
+
+        # Order sizes by master size sequence, with fallbacks appended
+        ordered_sizes = []
+        for ms in master_sizes:
+            for us in unique_sizes_set:
+                if us.lower() == ms.lower() and ms not in ordered_sizes:
+                    ordered_sizes.append(ms)
+        for us in sorted(unique_sizes_set):
+            if not any(os.lower() == us.lower() for os in ordered_sizes):
+                ordered_sizes.append(us.upper())
+
+        # Colors sorted alphabetically
+        ordered_colors = [{'display_color': c.upper(), 'name': c.upper()} for c in sorted(unique_colors_set)]
+
+        cur.close()
+        return jsonify({
+            'success': True,
+            'entity_info': entity_info,
+            'sizes': ordered_sizes,
+            'colors': ordered_colors,
+            'cells': cells_map,
+            'member_cells': member_cells
+        })
+    except Exception as e:
+        logger.error(f"Error fetching FGV matrix: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if conn:
+            release_db_connection(conn)
+
 # Route to serve the main HTML index page
 @app.route('/')
 def index():
